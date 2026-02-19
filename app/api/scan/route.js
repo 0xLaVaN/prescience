@@ -119,13 +119,15 @@ async function handleScan(request) {
     let dampenedCount = 0;
 
     // Split: deep-scan top markets by volume, lightweight for the rest
+    // Vercel hobby has 10s timeout. Each trade fetch ~300ms. 
+    // With concurrency of 20, we can do ~20 markets per second → 40 markets in ~2s safe budget
     const sorted = [...activeMarkets].sort((a, b) => (parseFloat(b.volume24hr) || 0) - (parseFloat(a.volume24hr) || 0));
-    const deepScanLimit = Math.min(sorted.length, 80); // Max 80 deep scans to stay within Vercel timeout
+    const deepScanLimit = Math.min(sorted.length, 40);
     const deepScanMarkets = sorted.slice(0, deepScanLimit);
     const lightweightMarkets = sorted.slice(deepScanLimit);
 
-    // Fetch trades concurrently in batches of 10
-    const BATCH_SIZE = 10;
+    // Fetch trades concurrently in batches of 20
+    const BATCH_SIZE = 20;
     for (let i = 0; i < deepScanMarkets.length; i += BATCH_SIZE) {
       const batch = deepScanMarkets.slice(i, i + BATCH_SIZE);
       const tradeResults = await Promise.all(
