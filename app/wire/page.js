@@ -1,9 +1,9 @@
 'use client';
 import { useState, useEffect } from 'react';
-import HeroTicker from './components/HeroTicker';
-import MarketCard from './components/MarketCard';
-import ScanTable from './components/ScanTable';
-import MetricCard from './components/MetricCard';
+import HeroTicker from '../components/HeroTicker';
+import MarketCard from '../components/MarketCard';
+import ScanTable from '../components/ScanTable';
+import MetricCard from '../components/MetricCard';
 
 export default function NewsroomHome() {
   const [markets, setMarkets] = useState([]);
