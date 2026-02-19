@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 
 const tabs = [
-  { label: 'WIRE', href: '/' },
+  { label: 'WIRE', href: '/wire' },
   { label: 'NEWSROOM', href: '/newsroom' },
   { label: 'SCANNER', href: '/scanner' },
 ];
@@ -19,8 +19,8 @@ export default function Nav() {
       {/* Logo */}
       <Link href="/" className="flex-shrink-0 mr-6">
         <span
-          className="text-[#ff3366] font-mono font-bold text-lg tracking-widest"
-          style={{ textShadow: '0 0 20px rgba(255,51,102,0.5), 0 0 40px rgba(255,51,102,0.2)' }}
+          className="text-[#00f0ff] font-mono font-bold text-lg tracking-widest"
+          style={{ textShadow: '0 0 20px rgba(0,240,255,0.5), 0 0 40px rgba(0,240,255,0.2)' }}
         >
           PRESCIENCE
         </span>

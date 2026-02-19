@@ -4,7 +4,7 @@ const cols = [
   {
     title: 'PRODUCT',
     links: [
-      { label: 'Wire', href: '/' },
+      { label: 'Wire', href: '/wire' },
       { label: 'Scanner', href: '/scanner' },
       { label: 'Newsroom', href: '/newsroom' },
     ],
@@ -20,7 +20,7 @@ const cols = [
   {
     title: 'SOCIAL',
     links: [
-      { label: 'X @prescikioto', href: 'https://x.com/prescikioto', external: true },
+      { label: 'X @lavanism_', href: 'https://x.com/lavanism_', external: true },
     ],
   },
 ];
@@ -52,7 +52,7 @@ export default function Footer() {
         <p className="text-[9px] tracking-[0.3em] text-white/20 font-mono">
           PRESCIENCE — PREDICTION MARKET INTELLIGENCE
         </p>
-        <p className="text-[9px] tracking-widest text-white/10 font-mono mt-1">© 2025</p>
+        <p className="text-[9px] tracking-widest text-white/10 font-mono mt-1">© 2026</p>
       </div>
     </footer>
   );
