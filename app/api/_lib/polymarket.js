@@ -48,6 +48,51 @@ export async function getActiveMarkets(limit = 30) {
   });
 }
 
+/**
+ * Fetch ALL active Polymarket markets via pagination.
+ * Returns up to maxMarkets, sorted by volume (descending).
+ * Results cached for 15 min.
+ */
+export async function getAllActiveMarkets(maxMarkets = 2000) {
+  return cached(`all_active_markets_${maxMarkets}`, MARKET_CACHE_TTL, async () => {
+    const allMarkets = [];
+    const batchSize = 100;
+    let offset = 0;
+    let failCount = 0;
+
+    while (allMarkets.length < maxMarkets && failCount < 3) {
+      try {
+        const batch = await fetchJSON(
+          `${GAMMA_API}/markets?active=true&limit=${batchSize}&offset=${offset}`
+        );
+        if (!batch || !Array.isArray(batch) || batch.length === 0) break;
+        allMarkets.push(...batch);
+        offset += batchSize;
+        // If we got fewer than batchSize, we've reached the end
+        if (batch.length < batchSize) break;
+      } catch (err) {
+        console.error(`Polymarket batch fetch failed at offset ${offset}:`, err.message);
+        failCount++;
+        offset += batchSize; // Skip failed batch
+      }
+    }
+
+    // Sort by 24h volume descending, dedup by conditionId
+    const seen = new Set();
+    const deduped = [];
+    for (const m of allMarkets) {
+      const key = m.conditionId || m.slug;
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        deduped.push(m);
+      }
+    }
+
+    deduped.sort((a, b) => (parseFloat(b.volume24hr) || 0) - (parseFloat(a.volume24hr) || 0));
+    return deduped.slice(0, maxMarkets);
+  });
+}
+
 export async function getMarketTrades(conditionId, limit = 500) {
   return cached(`trades_${conditionId}_${limit}`, CACHE_TTL, async () => {
     return fetchJSON(

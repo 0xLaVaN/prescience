@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { getActiveMarkets, getMarketTrades, fetchJSON } from '../_lib/polymarket';
-import { getKalshiActiveMarkets, getKalshiMarketTrades } from '../_lib/kalshi';
+import { getActiveMarkets, getAllActiveMarkets, getMarketTrades, fetchJSON } from '../_lib/polymarket';
+import { getKalshiActiveMarkets, getKalshiCached, getKalshiMarketTrades, findCrossExchangeMatches } from '../_lib/kalshi';
+import { computeDampening, applyDampening } from '../_lib/dampening';
 import { requirePayment } from '../_lib/auth.js';
 
 const GAMMA_API = 'https://gamma-api.polymarket.com';
@@ -11,11 +12,12 @@ async function handleScan(request) {
   try {
     const { searchParams } = new URL(request.url);
     const slug = searchParams.get('slug');
-    const exchange = searchParams.get('exchange'); // 'polymarket', 'kalshi', or 'both'
-    const limit = Math.min(parseInt(searchParams.get('limit')) || 20, 30);
+    const exchange = searchParams.get('exchange'); // 'polymarket', 'kalshi', or 'both' (default: both)
+    const limit = Math.min(parseInt(searchParams.get('limit')) || 100, 500);
 
     let activeMarkets = [];
-    
+    let kalshiCount = 0, polymarketCount = 0;
+
     if (slug) {
       // Handle specific market by slug
       const cacheKey = `market_slug_${slug}`;
@@ -23,47 +25,99 @@ async function handleScan(request) {
       if (!market || Date.now() - market._ts > MARKET_CACHE_TTL) {
         const results = await fetchJSON(`${GAMMA_API}/markets?slug=${encodeURIComponent(slug)}&limit=1`);
         market = results && results.length > 0 ? results[0] : null;
-        if (market) { 
-          market._ts = Date.now(); 
+        if (market) {
+          market._ts = Date.now();
           market.exchange = 'polymarket';
           slugCache.set(cacheKey, market);
         }
       }
       activeMarkets = market ? [market] : [];
     } else {
-      // Fetch from multiple exchanges based on parameter
-      const fetchPolymarket = !exchange || exchange === 'polymarket' || exchange === 'both';
-      const fetchKalshi = exchange === 'kalshi' || exchange === 'both';
-      
+      const effectiveExchange = exchange || 'both';
+      const fetchPolymarket = effectiveExchange === 'polymarket' || effectiveExchange === 'both';
+      const fetchKalshi = effectiveExchange === 'kalshi' || effectiveExchange === 'both';
+
       const marketPromises = [];
-      
+
       if (fetchPolymarket) {
+        // Use batch fetching for large limits, standard for small
+        const polyLimit = fetchKalshi ? Math.ceil(limit * 0.7) : limit;
+        const fetcher = polyLimit > 50 ? getAllActiveMarkets(polyLimit) : getActiveMarkets(polyLimit);
         marketPromises.push(
-          getActiveMarkets(Math.ceil(limit / (fetchKalshi ? 2 : 1)))
-            .then(markets => markets.map(m => ({ ...m, exchange: 'polymarket' })))
+          fetcher
+            .then(markets => {
+              polymarketCount = markets.length;
+              return markets.map(m => ({ ...m, exchange: 'polymarket' }));
+            })
             .catch(err => {
               console.error('Polymarket fetch failed:', err);
               return [];
             })
         );
       }
-      
+
       if (fetchKalshi) {
-        marketPromises.push(
-          getKalshiActiveMarkets(Math.ceil(limit / (fetchPolymarket ? 2 : 1)))
-            .then(markets => markets.map(m => ({ ...m, exchange: 'kalshi' })))
-            .catch(err => {
-              console.error('Kalshi fetch failed:', err);
-              return [];
+        const kalshiLimit = fetchPolymarket ? Math.ceil(limit * 0.3) : limit;
+        // Try cached first, fall back to fresh fetch
+        const kalshiCached = getKalshiCached();
+        if (kalshiCached.isFresh && kalshiCached.data.length > 0) {
+          marketPromises.push(
+            Promise.resolve(kalshiCached.data.slice(0, kalshiLimit)).then(markets => {
+              kalshiCount = markets.length;
+              return markets;
             })
-        );
+          );
+        } else {
+          marketPromises.push(
+            getKalshiActiveMarkets(kalshiLimit)
+              .then(markets => {
+                kalshiCount = markets.length;
+                return markets;
+              })
+              .catch(err => {
+                console.error('Kalshi fetch failed:', err);
+                return [];
+              })
+          );
+        }
       }
-      
+
       const marketResults = await Promise.all(marketPromises);
-      activeMarkets = marketResults.flat().slice(0, limit);
+      const allFetched = marketResults.flat();
+
+      // Cross-exchange dedup: if same question on both exchanges, merge
+      const polyMarkets = allFetched.filter(m => m.exchange === 'polymarket');
+      const kalshiMarkets = allFetched.filter(m => m.exchange === 'kalshi');
+
+      if (polyMarkets.length > 0 && kalshiMarkets.length > 0) {
+        const matches = findCrossExchangeMatches(polyMarkets, kalshiMarkets);
+        const dedupedKalshiIds = new Set(matches.map(m => m.kalshi.conditionId));
+
+        // For matched markets, enrich polymarket entry with cross-exchange data
+        for (const match of matches) {
+          const polyEntry = polyMarkets.find(m => m.conditionId === match.polymarket.conditionId);
+          if (polyEntry) {
+            polyEntry._crossExchange = {
+              kalshi_ticker: match.kalshi.conditionId,
+              kalshi_price: match.kalshiPrice,
+              poly_price: match.polyPrice,
+              price_divergence: match.priceDivergence,
+              similarity: match.similarity
+            };
+          }
+        }
+
+        // Include unmatched Kalshi markets + all Polymarket markets
+        const unmatchedKalshi = kalshiMarkets.filter(m => !dedupedKalshiIds.has(m.conditionId));
+        activeMarkets = [...polyMarkets, ...unmatchedKalshi].slice(0, limit);
+      } else {
+        activeMarkets = allFetched.slice(0, limit);
+      }
     }
 
     const markets = [];
+    let dampenedCount = 0;
+
     for (const market of activeMarkets) {
       try {
         // Fetch trades based on exchange
@@ -73,7 +127,7 @@ async function handleScan(request) {
         } else {
           trades = await getMarketTrades(market.conditionId, 300);
         }
-        
+
         if (!trades || trades.length < 3) continue;
 
         const now = Date.now() / 1000;
@@ -117,10 +171,11 @@ async function handleScan(request) {
         const absImbalance = Math.abs(flowImbalance);
         const totalWallets = Object.keys(wallets).length;
 
-        // Volume floor: Skip scoring markets with insufficient activity (pure noise)
+        // Volume floor: Skip markets with insufficient activity
         if (totalWallets < 10 || totalVolume < 500) {
-          continue; // Skip this market entirely
+          continue;
         }
+
         const freshWalletRatio = totalWallets > 0 ? freshWalletCount / totalWallets : 0;
         const isSampleCapped = trades.length >= 295;
         const BASELINE_FRESH_RATIO = isSampleCapped ? 0.60 : 0.30;
@@ -133,7 +188,7 @@ async function handleScan(request) {
         const vol24 = parseFloat(market.volume24hr) || totalVolume;
         const volumeVsLiquidityRatio = liq > 0 ? Math.min(vol24 / liq, 5) / 5 : 0;
 
-        // FIX (PM-006): flowDirectionV2 computed BEFORE use in conviction scoring
+        // flow_direction_v2
         let flowDirectionV2 = 'NEUTRAL';
         let minoritySideFlow = 0, majoritySideFlow = 0;
         let minorityOutcome = null, majorityOutcome = null;
@@ -167,22 +222,21 @@ async function handleScan(request) {
         }
         const normFlowV2 = flowV2Score / 5;
         const normLargePositionRatio = Math.min(largePositionRatio, 1);
-        
-        // FIX: Apply dampening to fresh_wallet_excess based on flow_direction_v2 (PM-007)
+
+        // Dampening: flow_direction_v2 based
         const effectiveFwExcess = excessFreshRatio * (
-          flowDirectionV2 === 'MAJORITY_ALIGNED' ? 0.2 : 
+          flowDirectionV2 === 'MAJORITY_ALIGNED' ? 0.2 :
           flowDirectionV2 === 'MIXED' ? 0.6 : 1.0
         );
         const normFreshExcess = Math.min(effectiveFwExcess / 0.4, 1);
-        
+
         const volLiqWeightMultiplier = flowDirectionV2 === 'MAJORITY_ALIGNED' ? 0.5 : 1.0;
         const normVolLiq = volumeVsLiquidityRatio * volLiqWeightMultiplier;
 
         const rawConviction = normFlowV2 * 5 + normLargePositionRatio * 3 + normFreshExcess * 2 + normVolLiq * 1;
         let threatScore = Math.round((rawConviction / 11) * 100);
 
-        // Volume floor check moved above - markets with <500 USD or <10 wallets are skipped entirely
-
+        // Existing dampening rules
         let consensusDampened = false;
         try {
           const prices = JSON.parse(market.outcomePrices || '[]');
@@ -203,9 +257,20 @@ async function handleScan(request) {
           if (hoursToExpiry < 48 && maxPrice >= 0.95) { nearExpiryConsensus = true; threatScore = Math.round(threatScore * 0.3); }
         } catch {}
 
+        // NEW: False positive dampening (meme/sports/expiry rules)
+        const dampening = computeDampening(market);
+        if (dampening.isDampened) {
+          threatScore = applyDampening(threatScore, dampening.factor);
+          dampenedCount++;
+        }
+
+        // Consensus hard cap
+        if (consensusDampened && excessFreshRatio < 0.10) threatScore = Math.min(threatScore, 5);
+        else if (consensusDampened) threatScore = Math.min(threatScore, 10);
+
         const threatLevel = threatScore >= 70 ? 'CRITICAL' : threatScore >= 45 ? 'HIGH' : threatScore >= 25 ? 'MODERATE' : 'LOW';
 
-        markets.push({
+        const entry = {
           exchange: market.exchange || 'polymarket',
           question: market.question,
           conditionId: market.conditionId,
@@ -238,20 +303,37 @@ async function handleScan(request) {
           majority_outcome: majorityOutcome,
           consensus_dampened: consensusDampened,
           fresh_excess_capped: freshExcessCapped,
-        });
+        };
+
+        // Add dampening info
+        if (dampening.isDampened) {
+          entry.is_dampened = true;
+          entry.dampening_factor = dampening.factor;
+          entry.dampening_reason = dampening.reason;
+        }
+
+        // Add cross-exchange data if present
+        if (market._crossExchange) {
+          entry.cross_exchange = market._crossExchange;
+        }
+
+        markets.push(entry);
       } catch (marketErr) {
         console.error(`Scan: market ${market?.question?.slice(0, 40)} failed:`, marketErr?.message);
       }
     }
 
-    markets.sort((a, b) => b.fresh_wallets - a.fresh_wallets);
+    markets.sort((a, b) => b.threat_score - a.threat_score);
 
     return NextResponse.json({
       scan: markets,
       meta: {
         markets_scanned: markets.length,
+        polymarket_markets: polymarketCount || markets.filter(m => m.exchange === 'polymarket').length,
+        kalshi_markets: kalshiCount || markets.filter(m => m.exchange === 'kalshi').length,
+        dampened_markets: dampenedCount,
         timestamp: new Date().toISOString(),
-        engine: 'Prescience Scan v2.1',
+        engine: 'Prescience Scan v3.0 — Wide Net',
       },
     });
   } catch (err) {
@@ -259,5 +341,4 @@ async function handleScan(request) {
   }
 }
 
-// Export with x402 payment gate
 export const GET = requirePayment(handleScan);

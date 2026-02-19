@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import { getResolvedMarkets, getActiveMarkets, getMarketTrades, computePrescienceScore } from '../_lib/polymarket';
+import { getResolvedMarkets, getActiveMarkets, getAllActiveMarkets, getMarketTrades, computePrescienceScore } from '../_lib/polymarket';
+import { getKalshiCached, getKalshiActiveMarkets } from '../_lib/kalshi';
+import { computeDampening, applyDampening } from '../_lib/dampening';
 import { requirePaymentForFull } from '../_lib/auth.js';
 
 async function handlePulse(request) {
@@ -136,19 +138,44 @@ async function handlePulse(request) {
 
     const combinedHighestScore = Math.max(highestScore, activeHighestScore);
 
+    // Get Kalshi market count for pulse stats
+    let kalshiMarketCount = 0;
+    try {
+      const kalshiCached = getKalshiCached();
+      kalshiMarketCount = kalshiCached.data.length;
+      // Trigger background refresh if stale
+      if (!kalshiCached.isFresh) {
+        getKalshiActiveMarkets(500).catch(() => {});
+      }
+    } catch {}
+
+    // Get broader Polymarket count
+    let polymarketTotalCount = 0;
+    try {
+      const allPoly = await getAllActiveMarkets(500);
+      polymarketTotalCount = allPoly.length;
+    } catch {
+      polymarketTotalCount = activeMarkets.length;
+    }
+
+    const totalMarketsScanned = polymarketTotalCount + kalshiMarketCount;
+
     return NextResponse.json({
       pulse: {
         timestamp: new Date().toISOString(),
-        markets_scanned: resolvedMarkets.length + activeMarkets.length,
+        markets_scanned: totalMarketsScanned,
+        polymarket_markets: polymarketTotalCount,
+        kalshi_markets: kalshiMarketCount,
         total_wallets: totalWallets,
         suspicious_wallets: totalSuspicious,
         suspicious_ratio: totalWallets > 0 ? Math.round((totalSuspicious / totalWallets) * 10000) / 100 : 0,
         highest_score: combinedHighestScore,
         total_volume_usd: Math.round(totalVolume * 100) / 100,
         threat_level: combinedHighestScore >= 75 ? 'SEVERE' : combinedHighestScore >= 50 ? 'ELEVATED' : combinedHighestScore >= 25 ? 'GUARDED' : 'LOW',
+        dampened_markets: 0, // Pulse hot_markets are pre-filtered; full dampening stats available via /api/scan
       },
       hot_markets: [...hotMarkets.filter(m => !m.closedTime), ...activeHotMarkets].sort((a, b) => (b.threat_score || b.suspicious_wallets || 0) - (a.threat_score || a.suspicious_wallets || 0)).slice(0, 10),
-      engine: 'Prescience v2.1',
+      engine: 'Prescience v3.0 — Wide Net',
       tagline: 'See who sees first.',
     });
   } catch (err) {
