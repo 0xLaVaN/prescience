@@ -118,16 +118,29 @@ async function handleScan(request) {
     const markets = [];
     let dampenedCount = 0;
 
-    for (const market of activeMarkets) {
-      try {
-        // Fetch trades based on exchange
-        let trades;
-        if (market.exchange === 'kalshi') {
-          trades = await getKalshiMarketTrades(market.conditionId, 300);
-        } else {
-          trades = await getMarketTrades(market.conditionId, 300);
-        }
+    // Split: deep-scan top markets by volume, lightweight for the rest
+    const sorted = [...activeMarkets].sort((a, b) => (parseFloat(b.volume24hr) || 0) - (parseFloat(a.volume24hr) || 0));
+    const deepScanLimit = Math.min(sorted.length, 80); // Max 80 deep scans to stay within Vercel timeout
+    const deepScanMarkets = sorted.slice(0, deepScanLimit);
+    const lightweightMarkets = sorted.slice(deepScanLimit);
 
+    // Fetch trades concurrently in batches of 10
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < deepScanMarkets.length; i += BATCH_SIZE) {
+      const batch = deepScanMarkets.slice(i, i + BATCH_SIZE);
+      const tradeResults = await Promise.all(
+        batch.map(market =>
+          (market.exchange === 'kalshi'
+            ? getKalshiMarketTrades(market.conditionId, 300)
+            : getMarketTrades(market.conditionId, 300)
+          ).catch(() => [])
+        )
+      );
+
+      for (let j = 0; j < batch.length; j++) {
+        const market = batch[j];
+        const trades = tradeResults[j];
+        try {
         if (!trades || trades.length < 3) continue;
 
         const now = Date.now() / 1000;
@@ -321,6 +334,37 @@ async function handleScan(request) {
       } catch (marketErr) {
         console.error(`Scan: market ${market?.question?.slice(0, 40)} failed:`, marketErr?.message);
       }
+      } // end for j
+    } // end for i (batch loop)
+
+    // Add lightweight markets (no trade analysis, basic metadata only)
+    for (const market of lightweightMarkets) {
+      let currentPrices = {};
+      try {
+        const outcomes = JSON.parse(market.outcomes || '[]');
+        const prices = JSON.parse(market.outcomePrices || '[]');
+        outcomes.forEach((o, i) => { currentPrices[o] = parseFloat(prices[i]); });
+      } catch {}
+
+      const dampening = computeDampening(market);
+      if (dampening.isDampened) dampenedCount++;
+
+      markets.push({
+        exchange: market.exchange || 'polymarket',
+        question: market.question,
+        conditionId: market.conditionId,
+        slug: market.slug,
+        volume24hr: market.volume24hr,
+        volumeTotal: market.volumeNum,
+        liquidity: market.liquidityNum,
+        endDate: market.endDate,
+        currentPrices,
+        threat_score: 0,
+        threat_level: 'LOW',
+        scan_depth: 'lightweight',
+        is_dampened: dampening.isDampened || undefined,
+        dampening_reason: dampening.reason || undefined,
+      });
     }
 
     markets.sort((a, b) => b.threat_score - a.threat_score);
