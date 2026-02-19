@@ -1,15 +1,61 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import ParticleBackground from './components/ParticleBackground';
+import HowItWorks from './components/HowItWorks';
 
-// ─── ANIMATED COUNTER ──────────────────────────────────────────────
+/* ═══════════════════════════════════════════════════════════════════
+   UTILITIES
+   ═══════════════════════════════════════════════════════════════════ */
+
+function useScrollReveal(threshold = 0.15) {
+  const ref = useRef(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([e]) => { if (e.isIntersecting) setVisible(true); },
+      { threshold }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [threshold]);
+  return [ref, visible];
+}
+
+function Section({ children, className = '', bg = false, id }) {
+  const [ref, visible] = useScrollReveal(0.1);
+  return (
+    <section
+      ref={ref}
+      id={id}
+      className={`relative py-24 md:py-32 px-6 transition-all duration-1000 ${bg ? 'bg-white/[0.01]' : ''} ${className}`}
+      style={{ opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(30px)' }}
+    >
+      {children}
+    </section>
+  );
+}
+
+function SectionDivider() {
+  return (
+    <div className="relative h-px max-w-4xl mx-auto">
+      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#00f0ff]/20 to-transparent" />
+    </div>
+  );
+}
+
+/* ── ANIMATED COUNTER ─────────────────────────────────────────────── */
 function AnimatedNumber({ value, duration = 1200, suffix = '' }) {
   const [display, setDisplay] = useState(0);
+  const [ref, visible] = useScrollReveal(0.3);
+  const started = useRef(false);
+
   useEffect(() => {
-    if (value == null) return;
+    if (!visible || started.current || value == null) return;
+    started.current = true;
     const target = typeof value === 'string' ? parseFloat(value) : value;
     if (isNaN(target)) return;
     let start = null;
@@ -21,55 +67,42 @@ function AnimatedNumber({ value, duration = 1200, suffix = '' }) {
       if (progress < 1) requestAnimationFrame(animate);
     };
     requestAnimationFrame(animate);
-  }, [value, duration]);
-  return <>{display.toLocaleString()}{suffix}</>;
+  }, [visible, value, duration]);
+
+  return <span ref={ref}>{display.toLocaleString()}{suffix}</span>;
 }
 
-// ─── THREAT GAUGE (clean radial) ───────────────────────────────────
+/* ── THREAT GAUGE ─────────────────────────────────────────────────── */
 function ThreatGauge({ level, score, marketsScanned }) {
   const colors = {
-    LOW: '#00ff88',
-    MODERATE: '#00f0ff',
-    ELEVATED: '#f0a000',
-    HIGH: '#f0a000',
-    SEVERE: '#ff3366',
-    CRITICAL: '#ff3366',
+    LOW: '#00ff88', MODERATE: '#00f0ff', ELEVATED: '#f0a000',
+    HIGH: '#f0a000', SEVERE: '#ff3366', CRITICAL: '#ff3366',
   };
   const color = colors[level] || '#00f0ff';
-  const pct = Math.min(score / 100, 1);
-  const circumference = 2 * Math.PI * 44;
-  const dashOffset = circumference * (1 - pct);
+  const pct = Math.min((score || 0) / 100, 1);
+  const C = 2 * Math.PI * 44;
 
   return (
     <div className="flex flex-col items-center">
-      <div className="relative w-40 h-40">
+      <div className="relative w-44 h-44">
         <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
-          {/* Track */}
-          <circle cx="50" cy="50" r="44" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="6" />
-          {/* Progress */}
-          <circle
-            cx="50" cy="50" r="44"
-            fill="none"
-            stroke={color}
-            strokeWidth="6"
-            strokeLinecap="round"
-            strokeDasharray={circumference}
-            strokeDashoffset={dashOffset}
-            style={{ filter: `drop-shadow(0 0 6px ${color})`, transition: 'stroke-dashoffset 1.2s ease-out' }}
+          <circle cx="50" cy="50" r="44" fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth="5" />
+          <circle cx="50" cy="50" r="44" fill="none" stroke={color} strokeWidth="5" strokeLinecap="round"
+            strokeDasharray={C} strokeDashoffset={C * (1 - pct)}
+            style={{ filter: `drop-shadow(0 0 8px ${color})`, transition: 'stroke-dashoffset 1.4s cubic-bezier(0.16,1,0.3,1)' }}
           />
         </svg>
-        {/* Center text */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-5xl font-black" style={{ color, textShadow: `0 0 20px ${color}60` }}>
+          <span className="text-5xl font-black tabular-nums" style={{ color, textShadow: `0 0 25px ${color}50` }}>
             {score ?? '—'}
           </span>
-          <span className="text-[10px] tracking-[0.25em] mt-1 font-mono" style={{ color, opacity: 0.8 }}>
+          <span className="text-[10px] tracking-[0.3em] mt-1 font-mono uppercase" style={{ color, opacity: 0.7 }}>
             {level || 'SCANNING'}
           </span>
         </div>
       </div>
       {marketsScanned != null && (
-        <div className="mt-3 text-[10px] text-white/30 tracking-widest font-mono">
+        <div className="mt-4 text-[10px] text-white/25 tracking-[0.25em] font-mono">
           {marketsScanned} MARKETS SCANNED
         </div>
       )}
@@ -77,112 +110,102 @@ function ThreatGauge({ level, score, marketsScanned }) {
   );
 }
 
-// ─── LIVE MARKET CARD ──────────────────────────────────────────────
+/* ── LIVE MARKET CARD ─────────────────────────────────────────────── */
 function LiveMarketCard({ market, index }) {
   const score = market.threat_score || market.suspicion || 0;
   const color = score >= 60 ? '#ff3366' : score >= 30 ? '#f0a000' : '#00f0ff';
+  const [ref, visible] = useScrollReveal(0.2);
+
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.1 }}
-      className="bg-white/[0.03] border border-white/10 rounded-xl p-4 hover:bg-white/[0.06] transition-all group"
+    <div
+      ref={ref}
+      className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-5 hover:bg-white/[0.05] hover:border-white/10 transition-all duration-500 group"
+      style={{
+        opacity: visible ? 1 : 0,
+        transform: visible ? 'translateY(0)' : 'translateY(25px)',
+        transitionDelay: `${index * 120}ms`,
+      }}
     >
-      <div className="flex items-center gap-3 mb-3">
-        <div className="w-11 h-11 rounded-full border-2 flex items-center justify-center flex-shrink-0"
-          style={{ borderColor: color, backgroundColor: `${color}10` }}>
-          <span className="text-base font-black" style={{ color }}>{score}</span>
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-12 h-12 rounded-full border flex items-center justify-center flex-shrink-0"
+          style={{ borderColor: `${color}60`, backgroundColor: `${color}08` }}>
+          <span className="text-sm font-black tabular-nums" style={{ color }}>{score}</span>
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-sm text-white/80 truncate group-hover:text-white transition-colors">
+          <div className="text-sm text-white/70 truncate group-hover:text-white/90 transition-colors leading-snug">
             {market.question || market.market?.question}
           </div>
-          <div className="text-xs text-white/30 mt-1">
+          <div className="text-[11px] text-white/25 mt-1 font-mono">
             {market.suspicious_wallets || market.signals?.fresh_wallet_count || 0} suspicious wallets
           </div>
         </div>
       </div>
-      <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-        <motion.div
-          className="h-full rounded-full"
-          style={{ backgroundColor: color, boxShadow: `0 0 8px ${color}40` }}
-          initial={{ width: 0 }}
-          animate={{ width: `${Math.min(100, score)}%` }}
-          transition={{ duration: 0.8, delay: index * 0.1 }}
+      <div className="w-full h-1 bg-white/[0.04] rounded-full overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all duration-1000"
+          style={{
+            backgroundColor: color,
+            boxShadow: `0 0 8px ${color}30`,
+            width: visible ? `${Math.min(100, score)}%` : '0%',
+            transitionDelay: `${index * 120 + 300}ms`,
+          }}
         />
       </div>
-    </motion.div>
-  );
-}
-
-// ─── HOW IT WORKS ──────────────────────────────────────────────────
-function HowItWorks() {
-  const steps = [
-    { icon: '🔍', title: 'SCAN', desc: 'Real-time analysis of 500+ prediction markets across Polymarket and Kalshi' },
-    { icon: '🎯', title: 'DETECT', desc: 'AI algorithms identify suspicious wallet behavior, whale movements, and insider patterns' },
-    { icon: '⚡', title: 'ALERT', desc: 'Instant notifications when anomalous activity suggests non-public information' },
-  ];
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-      {steps.map((s, i) => (
-        <motion.div key={s.title} initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.15 }} viewport={{ once: true }} className="text-center">
-          <div className="text-4xl mb-4">{s.icon}</div>
-          <h3 className="text-base font-black tracking-[0.15em] text-[#00f0ff] mb-2">{s.title}</h3>
-          <p className="text-sm text-white/50 leading-relaxed">{s.desc}</p>
-        </motion.div>
-      ))}
     </div>
   );
 }
 
-// ─── PRICING ───────────────────────────────────────────────────────
+/* ── PRICING ──────────────────────────────────────────────────────── */
 function Pricing() {
+  const [refL, visL] = useScrollReveal(0.2);
+  const [refR, visR] = useScrollReveal(0.2);
+
+  const cardBase = 'rounded-2xl p-8 transition-all duration-700';
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-      {/* Free */}
-      <motion.div initial={{ opacity: 0, x: -30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}
-        className="bg-white/[0.03] border border-white/10 rounded-2xl p-8 hover:bg-white/[0.05] transition-all">
+      <div ref={refL} className={`${cardBase} bg-white/[0.02] border border-white/[0.06] hover:bg-white/[0.04]`}
+        style={{ opacity: visL ? 1 : 0, transform: visL ? 'translateX(0)' : 'translateX(-30px)' }}>
         <div className="text-center mb-6">
-          <h3 className="text-2xl font-black text-white/80 mb-2">FREE</h3>
+          <h3 className="text-xl font-black text-white/70 mb-2 tracking-wider">FREE</h3>
           <div className="text-4xl font-black text-[#00f0ff] mb-1">$0</div>
-          <div className="text-sm text-white/40">forever</div>
+          <div className="text-xs text-white/30 tracking-wider">forever</div>
         </div>
         <ul className="space-y-3 mb-8">
           {['10 API calls per day', '/pulse and /scan endpoints', 'Real-time threat scores', 'Community support'].map(t => (
-            <li key={t} className="flex items-center gap-3 text-sm text-white/60">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#00f0ff]" />{t}
+            <li key={t} className="flex items-center gap-3 text-sm text-white/50">
+              <span className="w-1 h-1 rounded-full bg-[#00f0ff]/50" />{t}
             </li>
           ))}
         </ul>
-        <Link href="/about" className="block w-full py-3 text-center bg-white/5 border border-[#00f0ff]/30 text-[#00f0ff] rounded-xl font-bold tracking-wider hover:bg-[#00f0ff]/10 transition-all">
+        <Link href="/about" className="block w-full py-3 text-center bg-white/[0.04] border border-[#00f0ff]/20 text-[#00f0ff] rounded-xl font-bold tracking-wider hover:bg-[#00f0ff]/10 transition-all text-sm">
           GET STARTED
         </Link>
-      </motion.div>
-      {/* Pro */}
-      <motion.div initial={{ opacity: 0, x: 30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}
-        className="bg-gradient-to-br from-[#00f0ff]/10 to-transparent border border-[#00f0ff]/30 rounded-2xl p-8 relative overflow-hidden">
-        <div className="absolute -top-2 -right-2 bg-[#00f0ff] text-[#0a0a0f] text-xs font-black px-3 py-1 rounded-full transform rotate-12">PRO</div>
+      </div>
+
+      <div ref={refR} className={`${cardBase} bg-gradient-to-br from-[#00f0ff]/[0.06] to-transparent border border-[#00f0ff]/20 relative overflow-hidden`}
+        style={{ opacity: visR ? 1 : 0, transform: visR ? 'translateX(0)' : 'translateX(30px)' }}>
+        <div className="absolute -top-2 -right-2 bg-[#00f0ff] text-[#0a0a0f] text-[10px] font-black px-3 py-1 rounded-full rotate-12">PRO</div>
         <div className="text-center mb-6">
-          <h3 className="text-2xl font-black text-white/80 mb-2">PRO</h3>
+          <h3 className="text-xl font-black text-white/70 mb-2 tracking-wider">PRO</h3>
           <div className="text-4xl font-black text-[#00f0ff] mb-1">0.005 ETH</div>
-          <div className="text-sm text-white/40">per month</div>
+          <div className="text-xs text-white/30 tracking-wider">per month</div>
         </div>
         <ul className="space-y-3 mb-8">
           {['Unlimited API calls', 'Full API access (signals, alerts, scanner)', 'Real-time webhook alerts', 'Priority support', 'Historical backtesting data'].map(t => (
-            <li key={t} className="flex items-center gap-3 text-sm text-white/60">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#00f0ff]" />{t}
+            <li key={t} className="flex items-center gap-3 text-sm text-white/50">
+              <span className="w-1 h-1 rounded-full bg-[#00f0ff]/50" />{t}
             </li>
           ))}
         </ul>
-        <Link href="/pro" className="block w-full py-3 text-center bg-[#00f0ff] text-[#0a0a0f] rounded-xl font-black tracking-wider hover:bg-[#00f0ff]/80 transition-all">
+        <Link href="/pro" className="block w-full py-3 text-center bg-[#00f0ff] text-[#0a0a0f] rounded-xl font-black tracking-wider hover:bg-[#00f0ff]/80 transition-all text-sm">
           UPGRADE TO PRO
         </Link>
-      </motion.div>
+      </div>
     </div>
   );
 }
 
-// ─── TRUST SIGNALS ─────────────────────────────────────────────────
+/* ── TRUST SIGNALS ────────────────────────────────────────────────── */
 function TrustSignals({ pulse }) {
   const metrics = [
     { label: 'Markets Tracked', value: pulse?.markets_scanned || 500, suffix: '+' },
@@ -192,20 +215,19 @@ function TrustSignals({ pulse }) {
   ];
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-      {metrics.map((m, i) => (
-        <motion.div key={m.label} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} viewport={{ once: true }}
-          className="text-center bg-white/[0.02] border border-white/5 rounded-xl p-6 hover:bg-white/[0.04] transition-all">
-          <div className="text-3xl font-black text-[#00f0ff] mb-2" style={{ textShadow: '0 0 20px rgba(0,240,255,0.3)' }}>
+      {metrics.map((m) => (
+        <div key={m.label} className="text-center bg-white/[0.02] border border-white/[0.04] rounded-xl p-6 hover:bg-white/[0.04] transition-all duration-300">
+          <div className="text-3xl font-black text-[#00f0ff] mb-2" style={{ textShadow: '0 0 20px rgba(0,240,255,0.2)' }}>
             <AnimatedNumber value={m.value} suffix={m.suffix} />
           </div>
-          <div className="text-[10px] text-white/40 tracking-wider uppercase">{m.label}</div>
-        </motion.div>
+          <div className="text-[10px] text-white/30 tracking-[0.2em] uppercase">{m.label}</div>
+        </div>
       ))}
     </div>
   );
 }
 
-// ─── EMAIL SIGNUP ──────────────────────────────────────────────────
+/* ── EMAIL SIGNUP ──────────────────────────────────────────────────── */
 function EmailSignup() {
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState('idle');
@@ -214,7 +236,7 @@ function EmailSignup() {
     if (!email.trim() || status === 'loading') return;
     setStatus('loading');
     try {
-      const r = await fetch('/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim(), source: 'landing-v2' }) });
+      const r = await fetch('/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim(), source: 'landing-v3' }) });
       setStatus(r.ok ? 'success' : 'error');
       if (r.ok) setEmail('');
     } catch { setStatus('error'); }
@@ -223,16 +245,18 @@ function EmailSignup() {
   return (
     <form onSubmit={submit} className="flex flex-col sm:flex-row gap-4 max-w-md mx-auto">
       <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@email.com" required disabled={status === 'loading'}
-        className="flex-1 px-4 py-3 bg-white/[0.05] border border-white/20 rounded-xl text-white/80 placeholder:text-white/20 focus:outline-none focus:border-[#00f0ff]/50 transition-all disabled:opacity-50" />
+        className="flex-1 px-4 py-3 bg-white/[0.04] border border-white/10 rounded-xl text-white/80 placeholder:text-white/20 focus:outline-none focus:border-[#00f0ff]/40 transition-all disabled:opacity-50 text-sm" />
       <button type="submit" disabled={status === 'loading'}
-        className="px-8 py-3 bg-[#00f0ff] text-[#0a0a0f] font-black tracking-wider rounded-xl hover:bg-[#00f0ff]/80 transition-all disabled:opacity-50 whitespace-nowrap">
+        className="px-8 py-3 bg-[#00f0ff] text-[#0a0a0f] font-black tracking-wider rounded-xl hover:bg-[#00f0ff]/80 transition-all disabled:opacity-50 whitespace-nowrap text-sm">
         {status === 'loading' ? 'SENDING...' : status === 'success' ? '✓ SENT' : status === 'error' ? 'ERROR' : 'GET ACCESS'}
       </button>
     </form>
   );
 }
 
-// ─── MAIN LANDING PAGE ─────────────────────────────────────────────
+/* ═══════════════════════════════════════════════════════════════════
+   MAIN LANDING PAGE
+   ═══════════════════════════════════════════════════════════════════ */
 export default function PrescienceLanding() {
   const [pulse, setPulse] = useState(null);
   const [markets, setMarkets] = useState([]);
@@ -250,30 +274,38 @@ export default function PrescienceLanding() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchData(); const t = setInterval(fetchData, 60000); return () => clearInterval(t); }, [fetchData]);
+  useEffect(() => {
+    fetchData();
+    const t = setInterval(fetchData, 60000);
+    return () => clearInterval(t);
+  }, [fetchData]);
 
   return (
     <div className="relative z-10">
       <ParticleBackground />
 
-      {/* Hero */}
-      <section className="relative py-20 px-6">
+      {/* ─── HERO ─────────────────────────────────────────────────── */}
+      <section className="relative py-28 md:py-40 px-6">
         <div className="max-w-7xl mx-auto text-center">
-          <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} className="mb-10">
-            <h2 className="text-5xl md:text-7xl font-black tracking-tight text-white/90 mb-6 leading-tight">
+          <div className="mb-12 animate-[fadeInUp_0.8s_ease-out]">
+            <div className="text-[10px] text-[#00f0ff]/40 tracking-[0.5em] font-mono mb-6 uppercase">
+              Prediction Market Intelligence
+            </div>
+            <h1 className="text-5xl md:text-7xl lg:text-8xl font-black tracking-tight text-white/90 mb-8 leading-[0.95]">
               See Who{' '}
-              <span className="text-[#00f0ff]" style={{ textShadow: '0 0 30px rgba(0,240,255,0.5)' }}>Sees First</span>
-            </h2>
-            <p className="text-xl text-white/50 max-w-3xl mx-auto leading-relaxed">
-              Real-time detection of insider trading and whale movements in prediction markets.
-              AI-powered surveillance across 500+ markets on Polymarket and Kalshi.
+              <span className="text-[#00f0ff] inline-block" style={{ textShadow: '0 0 40px rgba(0,240,255,0.4)' }}>
+                Sees First
+              </span>
+            </h1>
+            <p className="text-lg md:text-xl text-white/40 max-w-2xl mx-auto leading-relaxed font-sans">
+              Real-time detection of insider trading and whale movements across 500+ prediction markets.
             </p>
-          </motion.div>
+          </div>
 
           {/* Threat Gauge */}
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="mb-12">
+          <div className="mb-14 animate-[fadeInUp_1s_ease-out_0.2s_both]">
             {loading ? (
-              <div className="w-40 h-40 mx-auto rounded-full border-2 border-white/10 animate-pulse" />
+              <div className="w-44 h-44 mx-auto rounded-full border border-white/[0.06] animate-pulse" />
             ) : (
               <ThreatGauge
                 level={pulse?.threat_level || 'LOW'}
@@ -281,89 +313,122 @@ export default function PrescienceLanding() {
                 marketsScanned={pulse?.markets_scanned}
               />
             )}
-          </motion.div>
+          </div>
 
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
-            className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/wire" className="px-8 py-4 bg-[#00f0ff] text-[#0a0a0f] font-black tracking-wider rounded-xl hover:bg-[#00f0ff]/80 transition-all">
+          <div className="flex flex-col sm:flex-row gap-4 justify-center animate-[fadeInUp_1s_ease-out_0.4s_both]">
+            <Link href="/wire"
+              className="px-8 py-4 bg-[#00f0ff] text-[#0a0a0f] font-black tracking-wider rounded-xl hover:bg-[#00f0ff]/80 transition-all text-sm">
               ENTER THE WIRE
             </Link>
-            <Link href="/about" className="px-8 py-4 bg-white/5 border border-white/20 text-white/80 font-bold tracking-wider rounded-xl hover:bg-white/10 transition-all">
+            <Link href="/about"
+              className="px-8 py-4 bg-white/[0.04] border border-white/10 text-white/60 font-bold tracking-wider rounded-xl hover:bg-white/[0.08] hover:text-white/80 transition-all text-sm">
               VIEW API DOCS
             </Link>
-          </motion.div>
+          </div>
         </div>
       </section>
 
-      {/* Live Demo */}
-      <section className="py-20 px-6 bg-white/[0.01]">
+      <SectionDivider />
+
+      {/* ─── LIVE MARKET INTELLIGENCE ─────────────────────────────── */}
+      <Section bg>
         <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-12">
-            <h3 className="text-3xl font-black tracking-wide text-white/80 mb-4">Live Market Intelligence</h3>
-            <p className="text-white/40 max-w-2xl mx-auto">Real-time threat scores from our AI surveillance system.</p>
+          <div className="text-center mb-14">
+            <div className="text-[10px] text-[#00f0ff]/30 tracking-[0.4em] font-mono mb-3">LIVE FEED</div>
+            <h2 className="text-3xl md:text-4xl font-black tracking-wide text-white/80 mb-4">Market Intelligence</h2>
+            <p className="text-white/30 max-w-xl mx-auto text-sm font-sans">Real-time threat scores from our AI surveillance system.</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {loading ? Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="bg-white/[0.03] border border-white/10 rounded-xl p-4 animate-pulse h-24" />
+              <div key={i} className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-5 animate-pulse h-28" />
             )) : markets.length > 0 ? markets.map((m, i) => (
               <LiveMarketCard key={i} market={m} index={i} />
             )) : (
-              <div className="col-span-3 text-center py-12 text-white/30">All markets clean. AI will alert when suspicious activity is detected.</div>
+              <div className="col-span-3 text-center py-16 text-white/20 font-sans text-sm">
+                All markets clean. AI will alert when suspicious activity is detected.
+              </div>
             )}
           </div>
           {!loading && markets.length > 0 && (
-            <div className="text-center mt-8">
-              <Link href="/wire" className="text-[#00f0ff] hover:text-[#00f0ff]/80 font-bold text-sm transition-colors">VIEW ALL MARKETS →</Link>
+            <div className="text-center mt-10">
+              <Link href="/wire" className="text-[#00f0ff]/70 hover:text-[#00f0ff] font-bold text-xs tracking-wider transition-colors">
+                VIEW ALL MARKETS →
+              </Link>
             </div>
           )}
         </div>
-      </section>
+      </Section>
 
-      {/* How It Works */}
-      <section className="py-20 px-6">
+      <SectionDivider />
+
+      {/* ─── HOW IT WORKS ─────────────────────────────────────────── */}
+      <Section>
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
-            <h3 className="text-3xl font-black tracking-wide text-white/80 mb-4">How Prescience Works</h3>
-            <p className="text-white/40 max-w-2xl mx-auto">AI surveillance monitoring every trade, every wallet, every pattern.</p>
+            <div className="text-[10px] text-[#00f0ff]/30 tracking-[0.4em] font-mono mb-3">METHODOLOGY</div>
+            <h2 className="text-3xl md:text-4xl font-black tracking-wide text-white/80 mb-4">How Prescience Works</h2>
+            <p className="text-white/30 max-w-xl mx-auto text-sm font-sans">
+              Three-stage intelligence pipeline. Scan. Detect. Alert.
+            </p>
           </div>
           <HowItWorks />
         </div>
-      </section>
+      </Section>
 
-      {/* Pricing */}
-      <section className="py-20 px-6 bg-white/[0.01]">
+      <SectionDivider />
+
+      {/* ─── PRICING ──────────────────────────────────────────────── */}
+      <Section bg>
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
-            <h3 className="text-3xl font-black tracking-wide text-white/80 mb-4">Simple Pricing</h3>
-            <p className="text-white/40 max-w-2xl mx-auto">Start free, upgrade when you need unlimited access. Pay with ETH, no middlemen.</p>
+            <div className="text-[10px] text-[#00f0ff]/30 tracking-[0.4em] font-mono mb-3">ACCESS</div>
+            <h2 className="text-3xl md:text-4xl font-black tracking-wide text-white/80 mb-4">Simple Pricing</h2>
+            <p className="text-white/30 max-w-xl mx-auto text-sm font-sans">
+              Start free, upgrade when you need unlimited access. Pay with ETH.
+            </p>
           </div>
           <Pricing />
         </div>
-      </section>
+      </Section>
 
-      {/* Trust */}
-      <section className="py-20 px-6">
+      <SectionDivider />
+
+      {/* ─── TRUST SIGNALS ────────────────────────────────────────── */}
+      <Section>
         <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <h3 className="text-3xl font-black tracking-wide text-white/80 mb-4">Trusted by Smart Money</h3>
+          <div className="text-center mb-14">
+            <div className="text-[10px] text-[#00f0ff]/30 tracking-[0.4em] font-mono mb-3">METRICS</div>
+            <h2 className="text-3xl md:text-4xl font-black tracking-wide text-white/80">Trusted by Smart Money</h2>
           </div>
           <TrustSignals pulse={pulse} />
         </div>
-      </section>
+      </Section>
 
-      {/* CTA */}
-      <section className="py-20 px-6 bg-gradient-to-br from-[#00f0ff]/5 to-transparent border-t border-white/5">
-        <div className="max-w-4xl mx-auto text-center">
-          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}>
-            <h3 className="text-4xl font-black tracking-wide text-white/90 mb-6">Ready to See Who Sees First?</h3>
-            <p className="text-lg text-white/50 mb-8 max-w-2xl mx-auto">Get early access to Prescience. Detect insider trading and whale movements in real-time.</p>
-            <EmailSignup />
-            <div className="mt-8 flex items-center justify-center gap-6 text-xs text-white/20">
-              <span>No spam</span><span>•</span><span>Cancel anytime</span><span>•</span><span>Free during beta</span>
-            </div>
-          </motion.div>
+      <SectionDivider />
+
+      {/* ─── CTA ──────────────────────────────────────────────────── */}
+      <Section>
+        <div className="max-w-3xl mx-auto text-center">
+          <h2 className="text-4xl md:text-5xl font-black tracking-wide text-white/90 mb-6 leading-tight">
+            Ready to See Who Sees First?
+          </h2>
+          <p className="text-base text-white/40 mb-10 max-w-xl mx-auto font-sans leading-relaxed">
+            Get early access to Prescience. Detect insider trading and whale movements in real-time.
+          </p>
+          <EmailSignup />
+          <div className="mt-8 flex items-center justify-center gap-6 text-[10px] text-white/15 tracking-wider">
+            <span>No spam</span><span>·</span><span>Cancel anytime</span><span>·</span><span>Free during beta</span>
+          </div>
         </div>
-      </section>
+      </Section>
+
+      {/* ─── GLOBAL KEYFRAMES ─────────────────────────────────────── */}
+      <style jsx global>{`
+        @keyframes fadeInUp {
+          from { opacity: 0; transform: translateY(30px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </div>
   );
 }
