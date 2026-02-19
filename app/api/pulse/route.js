@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getResolvedMarkets, getActiveMarkets, getMarketTrades, computePrescienceScore } from '../_lib/polymarket';
+import { requireAuth } from '../_lib/auth.js';
 
-export async function GET() {
+async function handlePulse(request) {
   try {
     const resolvedMarkets = await getResolvedMarkets(20);
     const activeMarkets = await getActiveMarkets(10);
@@ -154,3 +155,6 @@ export async function GET() {
     return NextResponse.json({ error: 'Failed to generate pulse', detail: err.message }, { status: 500 });
   }
 }
+
+// Export with auth middleware
+export const GET = requireAuth(handlePulse);

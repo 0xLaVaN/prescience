@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getActiveMarkets, getMarketTrades, fetchJSON } from '../_lib/polymarket';
 import { getKalshiActiveMarkets, getKalshiMarketTrades } from '../_lib/kalshi';
+import { requireAuth } from '../_lib/auth.js';
 
 const GAMMA_API = 'https://gamma-api.polymarket.com';
 const MARKET_CACHE_TTL = 15 * 60 * 1000;
 const slugCache = new Map();
 
-export async function GET(request) {
+async function handleScan(request) {
   try {
     const { searchParams } = new URL(request.url);
     const slug = searchParams.get('slug');
@@ -257,3 +258,6 @@ export async function GET(request) {
     return NextResponse.json({ error: 'Market scan failed', detail: err.message }, { status: 500 });
   }
 }
+
+// Export with auth middleware
+export const GET = requireAuth(handleScan);

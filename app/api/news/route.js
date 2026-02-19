@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getActiveMarkets, getMarketTrades } from '../_lib/polymarket';
+import { requireAuth } from '../_lib/auth.js';
 
 const CACHE_TTL = 5 * 60 * 1000;
 let newsCache = null;
 let newsCacheTs = 0;
 
-export async function GET() {
+async function handleNews(request) {
   try {
     if (newsCache && Date.now() - newsCacheTs < CACHE_TTL) {
       return NextResponse.json(newsCache);
@@ -90,3 +91,6 @@ export async function GET() {
     return NextResponse.json({ error: 'Failed to generate news feed', detail: err.message }, { status: 500 });
   }
 }
+
+// Export with auth middleware
+export const GET = requireAuth(handleNews);
