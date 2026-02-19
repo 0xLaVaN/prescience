@@ -117,9 +117,19 @@ export function checkRateLimit(apiKey) {
   };
 }
 
+// Internal health check secret (bypass auth for monitoring)
+const INTERNAL_SECRET = process.env.PRESCIENCE_INTERNAL_KEY || 'prescience-internal-health-2026';
+
 // Middleware for API route protection
 export function requireAuth(handler) {
   return async (request) => {
+    // Allow internal health checks to bypass auth
+    const internalKey = request.headers.get('x-internal-key');
+    if (internalKey === INTERNAL_SECRET) {
+      request.auth = { allowed: true, tier: 'internal', calls_used: 0, daily_limit: 'unlimited' };
+      return handler(request);
+    }
+    
     const apiKey = request.headers.get('x-api-key');
     
     if (!apiKey) {
