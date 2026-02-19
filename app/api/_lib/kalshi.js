@@ -52,27 +52,23 @@ export async function getKalshiActiveMarkets(maxMarkets = 300) {
     const nonSportsEvents = allEvents.filter(e => e.category !== 'Sports');
     console.log(`Kalshi: ${allEvents.length} events, ${nonSportsEvents.length} non-sports`);
 
-    // Step 2: Fetch markets for non-sports events (concurrent batches)
+    // Step 2: Fetch markets for ALL non-sports events concurrently (one big Promise.all)
     const allMarkets = [];
-    const BATCH = 10;
     const eventTickers = nonSportsEvents.map(e => e.event_ticker);
 
-    for (let i = 0; i < eventTickers.length && allMarkets.length < maxMarkets; i += BATCH) {
-      const batch = eventTickers.slice(i, i + BATCH);
-      const results = await Promise.all(
-        batch.map(ticker =>
-          fetch(`${KALSHI_API}/markets?event_ticker=${encodeURIComponent(ticker)}&status=open&limit=50`)
-            .then(r => r.ok ? r.json() : { markets: [] })
-            .then(d => d.markets || [])
-            .catch(() => [])
-        )
-      );
-      for (const markets of results) {
-        for (const m of markets) {
-          // Extra filter: skip anything with sports-like event tickers
-          if (m.event_ticker?.match(/^KX(MVESPORTS|NBA|NHL|MLB|NFL|SOCCER|EPL|NCAA|UFC|WNBA|MLS)/)) continue;
-          allMarkets.push(mapKalshiMarket(m));
-        }
+    // Fire all requests at once — each is tiny, Kalshi can handle it
+    const results = await Promise.all(
+      eventTickers.map(ticker =>
+        fetch(`${KALSHI_API}/markets?event_ticker=${encodeURIComponent(ticker)}&status=open&limit=50`)
+          .then(r => r.ok ? r.json() : { markets: [] })
+          .then(d => d.markets || [])
+          .catch(() => [])
+      )
+    );
+    for (const markets of results) {
+      for (const m of markets) {
+        if (m.event_ticker?.match(/^KX(MVESPORTS|NBA|NHL|MLB|NFL|SOCCER|EPL|NCAA|UFC|WNBA|MLS)/)) continue;
+        allMarkets.push(mapKalshiMarket(m));
       }
     }
 
