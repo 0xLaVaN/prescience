@@ -40,17 +40,25 @@ async function handleScan(request) {
       const marketPromises = [];
 
       if (fetchPolymarket) {
-        // Fetch 3x the limit to account for volume floor filtering
-        const polyLimit = fetchKalshi ? Math.ceil(limit * 2) : Math.ceil(limit * 3);
-        const fetcher = polyLimit > 50 ? getAllActiveMarkets(polyLimit) : getActiveMarkets(polyLimit);
+        // Use standard fetch sorted by volume for deep scan candidates
+        // Use batch fetch for lightweight coverage (cached, doesn't block)
+        const polyDeepLimit = Math.min(limit, 50); // Top 50 by volume for deep scan
+        const polyBroadLimit = Math.max(limit * 2, 200); // Broader set for lightweight
+        // Fast fetch: top markets by volume (single API call, ~200ms)
         marketPromises.push(
-          fetcher
+          getActiveMarkets(polyDeepLimit)
+            .then(markets => markets.map(m => ({ ...m, exchange: 'polymarket', _deepScanCandidate: true })))
+            .catch(() => [])
+        );
+        // Broad fetch: all active for lightweight coverage (cached after first call)
+        marketPromises.push(
+          getAllActiveMarkets(polyBroadLimit)
             .then(markets => {
               polymarketCount = markets.length;
               return markets.map(m => ({ ...m, exchange: 'polymarket' }));
             })
             .catch(err => {
-              console.error('Polymarket fetch failed:', err);
+              console.error('Polymarket broad fetch failed:', err);
               return [];
             })
         );
@@ -85,9 +93,20 @@ async function handleScan(request) {
       const marketResults = await Promise.all(marketPromises);
       const allFetched = marketResults.flat();
 
+      // Dedup by conditionId (deep candidates + broad may overlap)
+      const seen = new Set();
+      const deduped = [];
+      for (const m of allFetched) {
+        const key = `${m.exchange}_${m.conditionId}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          deduped.push(m);
+        }
+      }
+
       // Cross-exchange dedup: if same question on both exchanges, merge
-      const polyMarkets = allFetched.filter(m => m.exchange === 'polymarket');
-      const kalshiMarkets = allFetched.filter(m => m.exchange === 'kalshi');
+      const polyMarkets = deduped.filter(m => m.exchange === 'polymarket');
+      const kalshiMarkets = deduped.filter(m => m.exchange === 'kalshi');
 
       if (polyMarkets.length > 0 && kalshiMarkets.length > 0) {
         const matches = findCrossExchangeMatches(polyMarkets, kalshiMarkets);
@@ -118,13 +137,16 @@ async function handleScan(request) {
     const markets = [];
     let dampenedCount = 0;
 
-    // Split: deep-scan top markets by volume, lightweight for the rest
-    // Vercel hobby has 10s timeout. Each trade fetch ~300ms. 
-    // With concurrency of 20, we can do ~20 markets per second → 40 markets in ~2s safe budget
+    // Split: deep-scan candidates (top by volume, flagged during fetch) vs lightweight
+    const deepCandidates = activeMarkets.filter(m => m._deepScanCandidate);
     const sorted = [...activeMarkets].sort((a, b) => (parseFloat(b.volume24hr) || 0) - (parseFloat(a.volume24hr) || 0));
-    const deepScanLimit = Math.min(sorted.length, 40);
-    const deepScanMarkets = sorted.slice(0, deepScanLimit);
-    const lightweightMarkets = sorted.slice(deepScanLimit);
+    // Deep scan: use flagged candidates, or top 40 by volume
+    const deepScanLimit = 40;
+    const deepScanMarkets = deepCandidates.length > 0 
+      ? deepCandidates.slice(0, deepScanLimit)
+      : sorted.slice(0, deepScanLimit);
+    const deepIds = new Set(deepScanMarkets.map(m => `${m.exchange}_${m.conditionId}`));
+    const lightweightMarkets = activeMarkets.filter(m => !deepIds.has(`${m.exchange}_${m.conditionId}`));
 
     // Fetch trades concurrently in batches of 20
     const BATCH_SIZE = 20;
