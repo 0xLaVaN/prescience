@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getResolvedMarkets, getActiveMarkets, getAllActiveMarkets, getMarketTrades, computePrescienceScore } from '../_lib/polymarket';
 import { getKalshiCached, getKalshiActiveMarkets } from '../_lib/kalshi';
 import { computeDampening, applyDampening } from '../_lib/dampening';
+import { getWhaleAggregateStats } from '../_lib/analysis.js';
 import { requirePaymentForFull } from '../_lib/auth.js';
 
 async function handlePulse(request) {
@@ -160,6 +161,21 @@ async function handlePulse(request) {
 
     const totalMarketsScanned = polymarketTotalCount + kalshiMarketCount;
 
+    // Whale aggregate stats (top 20 active markets by volume)
+    let whaleStats = { whale_trades_24h: 0, concentration_alerts: 0, top_positions: [] };
+    try {
+      const topConditionIds = activeMarkets
+        .filter(m => m.conditionId)
+        .sort((a, b) => (parseFloat(b.volume24hr) || 0) - (parseFloat(a.volume24hr) || 0))
+        .slice(0, 20)
+        .map(m => m.conditionId);
+      if (topConditionIds.length > 0) {
+        whaleStats = await getWhaleAggregateStats(topConditionIds);
+      }
+    } catch (err) {
+      console.error('Whale stats failed:', err?.message);
+    }
+
     return NextResponse.json({
       pulse: {
         timestamp: new Date().toISOString(),
@@ -172,7 +188,14 @@ async function handlePulse(request) {
         highest_score: combinedHighestScore,
         total_volume_usd: Math.round(totalVolume * 100) / 100,
         threat_level: combinedHighestScore >= 75 ? 'SEVERE' : combinedHighestScore >= 50 ? 'ELEVATED' : combinedHighestScore >= 25 ? 'GUARDED' : 'LOW',
-        dampened_markets: 0, // Pulse hot_markets are pre-filtered; full dampening stats available via /api/scan
+        dampened_markets: 0,
+        whale_activity_24h: whaleStats.whale_trades_24h,
+        concentration_alerts: whaleStats.concentration_alerts,
+      },
+      whale_intelligence: {
+        whale_trades_24h: whaleStats.whale_trades_24h,
+        concentration_alerts: whaleStats.concentration_alerts,
+        top_positions: whaleStats.top_positions,
       },
       hot_markets: [...hotMarkets.filter(m => !m.closedTime), ...activeHotMarkets].sort((a, b) => (b.threat_score || b.suspicious_wallets || 0) - (a.threat_score || a.suspicious_wallets || 0)).slice(0, 10),
       engine: 'Prescience v3.0 — Wide Net',

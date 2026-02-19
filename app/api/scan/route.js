@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getActiveMarkets, getAllActiveMarkets, getMarketTrades, fetchJSON } from '../_lib/polymarket';
 import { getKalshiActiveMarkets, getKalshiCached, getKalshiMarketTrades, findCrossExchangeMatches } from '../_lib/kalshi';
 import { computeDampening, applyDampening } from '../_lib/dampening';
+import { computeWhaleIntelligence } from '../_lib/analysis.js';
 import { requirePayment } from '../_lib/auth.js';
 
 const GAMMA_API = 'https://gamma-api.polymarket.com';
@@ -354,12 +355,52 @@ async function handleScan(request) {
           entry.cross_exchange = market._crossExchange;
         }
 
+        // Whale intelligence (deep scan only, non-blocking)
+        entry._conditionId = market.conditionId;
+        entry._market = market;
+
         markets.push(entry);
       } catch (marketErr) {
         console.error(`Scan: market ${market?.question?.slice(0, 40)} failed:`, marketErr?.message);
       }
       } // end for j
     } // end for i (batch loop)
+
+    // Whale intelligence enrichment for deep-scanned markets (top 40)
+    // Process in parallel batches to respect rate limits
+    const deepScannedMarkets = markets.filter(m => m._conditionId);
+    const WHALE_BATCH = 10;
+    for (let i = 0; i < deepScannedMarkets.length; i += WHALE_BATCH) {
+      const batch = deepScannedMarkets.slice(i, i + WHALE_BATCH);
+      const whaleResults = await Promise.all(
+        batch.map(m =>
+          computeWhaleIntelligence(m._conditionId, m._market).catch(err => {
+            console.error(`Whale intel failed for ${m._conditionId}:`, err?.message);
+            return null;
+          })
+        )
+      );
+      for (let j = 0; j < batch.length; j++) {
+        const whale = whaleResults[j];
+        if (whale) {
+          batch[j].whale_intelligence = {
+            whale_concentration: whale.whale_concentration,
+            whale_concentration_pct: whale.whale_concentration_pct,
+            fresh_whale: whale.fresh_whale,
+            fresh_whale_count: whale.fresh_whale_count,
+            whale_pnl_divergence: whale.whale_pnl_divergence,
+            counter_flow: whale.counter_flow,
+            counter_flow_detail: whale.counter_flow_detail,
+            top_holders_count: whale.top_holders_count,
+            whale_trades_count: whale.whale_trades_count,
+            positions_count: whale.positions_count,
+          };
+        }
+        // Clean up internal fields
+        delete batch[j]._conditionId;
+        delete batch[j]._market;
+      }
+    }
 
     // Add lightweight markets (no trade analysis, basic metadata only)
     for (const market of lightweightMarkets) {
