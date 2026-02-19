@@ -40,8 +40,8 @@ async function handleScan(request) {
       const marketPromises = [];
 
       if (fetchPolymarket) {
-        // Use batch fetching for large limits, standard for small
-        const polyLimit = fetchKalshi ? Math.ceil(limit * 0.7) : limit;
+        // Fetch 3x the limit to account for volume floor filtering
+        const polyLimit = fetchKalshi ? Math.ceil(limit * 2) : Math.ceil(limit * 3);
         const fetcher = polyLimit > 50 ? getAllActiveMarkets(polyLimit) : getActiveMarkets(polyLimit);
         marketPromises.push(
           fetcher
@@ -57,7 +57,7 @@ async function handleScan(request) {
       }
 
       if (fetchKalshi) {
-        const kalshiLimit = fetchPolymarket ? Math.ceil(limit * 0.3) : limit;
+        const kalshiLimit = fetchPolymarket ? Math.ceil(limit * 1) : Math.ceil(limit * 2);
         // Try cached first, fall back to fresh fetch
         const kalshiCached = getKalshiCached();
         if (kalshiCached.isFresh && kalshiCached.data.length > 0) {
@@ -109,9 +109,9 @@ async function handleScan(request) {
 
         // Include unmatched Kalshi markets + all Polymarket markets
         const unmatchedKalshi = kalshiMarkets.filter(m => !dedupedKalshiIds.has(m.conditionId));
-        activeMarkets = [...polyMarkets, ...unmatchedKalshi].slice(0, limit);
+        activeMarkets = [...polyMarkets, ...unmatchedKalshi];
       } else {
-        activeMarkets = allFetched.slice(0, limit);
+        activeMarkets = allFetched;
       }
     }
 
@@ -324,11 +324,13 @@ async function handleScan(request) {
     }
 
     markets.sort((a, b) => b.threat_score - a.threat_score);
+    const outputMarkets = markets.slice(0, limit);
 
     return NextResponse.json({
-      scan: markets,
+      scan: outputMarkets,
       meta: {
-        markets_scanned: markets.length,
+        markets_scanned: outputMarkets.length,
+        total_markets_analyzed: markets.length,
         polymarket_markets: polymarketCount || markets.filter(m => m.exchange === 'polymarket').length,
         kalshi_markets: kalshiCount || markets.filter(m => m.exchange === 'kalshi').length,
         dampened_markets: dampenedCount,
