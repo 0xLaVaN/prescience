@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getActiveMarkets, getMarketTrades } from '../_lib/polymarket';
-import { requireAuth } from '../_lib/auth.js';
+import { requirePayment } from '../_lib/auth.js';
 
 const CACHE_TTL = 5 * 60 * 1000;
 let newsCache = null;
@@ -92,5 +92,5 @@ async function handleNews(request) {
   }
 }
 
-// Export with auth middleware
-export const GET = requireAuth(handleNews);
+// Export with x402 payment gate
+export const GET = requirePayment(handleNews);

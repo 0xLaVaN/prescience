@@ -1,219 +1,68 @@
-// Prescience API Authentication & Rate Limiting
-// Simple in-memory storage for MVP - replace with database in production
+// Prescience API Authentication — x402 Payment Protocol
+// Uses Coinbase x402 for micropayments on Base (USDC)
+// Internal health check bypass via PRESCIENCE_INTERNAL_KEY env var
 
-// In-memory stores (replace with Redis/DB for production)
-const apiKeys = new Map(); // key -> { email, tier, createdAt, lastUsed, callCount, dailyReset }
-const dailyCallCounts = new Map(); // key -> { date, calls }
+import { x402ResourceServer } from '@x402/next';
+import { ExactEvmScheme } from '@x402/evm/exact/server';
+import { withX402 } from '@x402/next';
 
-// Constants
-const FREE_TIER_DAILY_LIMIT = 10;
-const PRO_TIER_MONTHLY_PRICE_ETH = 0.005;
-const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-const FREE_RATE_LIMIT = 10; // calls per minute
-const PRO_RATE_LIMIT = 100; // calls per minute
+// Our receiving wallet (deployer)
+const PAY_TO = '0x11F5397F191144894cD907A181ED61A7bf5634dE';
 
-// Generate secure API key
-function generateApiKey() {
-  return 'pk_' + Array.from({ length: 32 }, () => 
-    Math.random().toString(36)[2] || '0'
-  ).join('').slice(0, 32);
-}
+// Network: Base mainnet
+const NETWORK = 'eip155:8453';
 
-// Register new API key
-export function registerApiKey(email, source = 'register') {
-  const apiKey = generateApiKey();
-  const now = new Date();
-  
-  apiKeys.set(apiKey, {
-    email,
-    tier: 'free',
-    createdAt: now.toISOString(),
-    lastUsed: now.toISOString(),
-    source,
-    callCount: 0,
-    dailyReset: getDateString(now),
-    monthlyReset: getMonthString(now),
-    paymentTxHash: null,
-    paymentVerified: false
-  });
-  
-  console.log(`[API KEY REGISTERED] ${email} -> ${apiKey} (${source})`);
-  return apiKey;
-}
+// Internal health check secret (bypass x402 for monitoring)
+const INTERNAL_SECRET = process.env.PRESCIENCE_INTERNAL_KEY || '';
 
-// Upgrade key to Pro tier
-export function upgradeApiKey(apiKey, txHash) {
-  const keyData = apiKeys.get(apiKey);
-  if (!keyData) return false;
-  
-  keyData.tier = 'pro';
-  keyData.paymentTxHash = txHash;
-  keyData.paymentVerified = true;
-  keyData.upgradeDate = new Date().toISOString();
-  
-  console.log(`[API KEY UPGRADED] ${keyData.email} -> Pro (tx: ${txHash})`);
-  return true;
-}
+// Create shared x402 resource server (uses default Coinbase CDP facilitator)
+const server = new x402ResourceServer();
+server.register(NETWORK, new ExactEvmScheme());
 
-// Get date string for daily reset
-function getDateString(date = new Date()) {
-  return date.toISOString().split('T')[0];
-}
+// Route config for paid endpoints: $0.001 USDC per call
+export const paidRouteConfig = {
+  accepts: {
+    scheme: 'exact',
+    network: NETWORK,
+    payTo: PAY_TO,
+    price: '$0.001',
+  },
+  description: 'Prescience API — insider trading intelligence',
+};
 
-// Get month string for monthly reset
-function getMonthString(date = new Date()) {
-  return date.toISOString().slice(0, 7); // YYYY-MM
-}
-
-// Check and update rate limits
-export function checkRateLimit(apiKey) {
-  const keyData = apiKeys.get(apiKey);
-  if (!keyData) return { allowed: false, error: 'Invalid API key' };
+// Wrap a handler with x402 payment gate + internal bypass
+export function requirePayment(handler) {
+  const x402Handler = withX402(handler, paidRouteConfig, server);
   
-  const now = new Date();
-  const today = getDateString(now);
-  const currentMonth = getMonthString(now);
-  
-  // Update last used
-  keyData.lastUsed = now.toISOString();
-  
-  // Reset daily counter if new day
-  if (keyData.dailyReset !== today) {
-    keyData.callCount = 0;
-    keyData.dailyReset = today;
-  }
-  
-  // Check if Pro tier needs monthly reset/payment renewal
-  if (keyData.tier === 'pro' && keyData.monthlyReset !== currentMonth) {
-    // For MVP, assume Pro is valid for the month they paid
-    // In production, add payment expiry logic here
-    keyData.monthlyReset = currentMonth;
-  }
-  
-  // Apply limits based on tier
-  const isFreeTier = keyData.tier === 'free';
-  const dailyLimit = isFreeTier ? FREE_TIER_DAILY_LIMIT : Infinity;
-  
-  // Check daily limit for free tier
-  if (isFreeTier && keyData.callCount >= dailyLimit) {
-    return { 
-      allowed: false, 
-      error: 'Daily limit exceeded',
-      limit: dailyLimit,
-      calls_used: keyData.callCount,
-      tier: keyData.tier,
-      reset_time: 'midnight UTC'
-    };
-  }
-  
-  // Increment call count
-  keyData.callCount++;
-  
-  return { 
-    allowed: true, 
-    tier: keyData.tier,
-    calls_used: keyData.callCount,
-    daily_limit: dailyLimit === Infinity ? 'unlimited' : dailyLimit
-  };
-}
-
-// Internal health check secret (bypass auth for monitoring)
-const INTERNAL_SECRET = process.env.PRESCIENCE_INTERNAL_KEY || 'prescience-internal-health-2026';
-
-// Middleware for API route protection
-export function requireAuth(handler) {
   return async (request) => {
-    // Allow internal health checks to bypass auth
+    // Allow internal health checks to bypass payment
     const internalKey = request.headers.get('x-internal-key');
-    if (internalKey === INTERNAL_SECRET) {
-      request.auth = { allowed: true, tier: 'internal', calls_used: 0, daily_limit: 'unlimited' };
+    if (INTERNAL_SECRET && internalKey === INTERNAL_SECRET) {
       return handler(request);
     }
     
-    const apiKey = request.headers.get('x-api-key');
-    
-    if (!apiKey) {
-      return new Response(JSON.stringify({
-        error: 'API key required',
-        message: 'Add x-api-key header with your API key',
-        get_key: 'POST /api/register with your email'
-      }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-    
-    const rateLimitCheck = checkRateLimit(apiKey);
-    
-    if (!rateLimitCheck.allowed) {
-      const status = rateLimitCheck.error === 'Invalid API key' ? 401 : 429;
-      const response = {
-        error: rateLimitCheck.error,
-        tier: rateLimitCheck.tier,
-        calls_used: rateLimitCheck.calls_used,
-        limit: rateLimitCheck.limit
-      };
-      
-      if (status === 429) {
-        response.upgrade = {
-          message: 'Upgrade to Pro for unlimited calls',
-          price: `${PRO_TIER_MONTHLY_PRICE_ETH} ETH/month`,
-          endpoint: '/api/upgrade'
-        };
-      }
-      
-      return new Response(JSON.stringify(response), {
-        status,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-    
-    // Add auth data to request for handler
-    request.auth = rateLimitCheck;
-    
-    return handler(request);
+    return x402Handler(request);
   };
 }
 
-// Get API key info
-export function getApiKeyInfo(apiKey) {
-  return apiKeys.get(apiKey);
-}
-
-// List all keys (for admin/debugging)
-export function listApiKeys() {
-  return Array.from(apiKeys.entries()).map(([key, data]) => ({
-    key: key.slice(0, 8) + '...',
-    email: data.email,
-    tier: data.tier,
-    createdAt: data.createdAt,
-    callCount: data.callCount
-  }));
-}
-
-// ETH payment verification (simplified for MVP)
-export async function verifyEthPayment(txHash, expectedAmount = PRO_TIER_MONTHLY_PRICE_ETH) {
-  // In production, use a real blockchain API like Alchemy/Infura
-  // For MVP, assume all tx hashes are valid if they look like ETH tx hashes
+// For pulse free tier (summary only, no payment needed)
+export function requirePaymentForFull(summaryHandler, fullHandler) {
+  const x402Handler = withX402(fullHandler, paidRouteConfig, server);
   
-  const isValidTxFormat = /^0x[a-fA-F0-9]{64}$/.test(txHash);
-  
-  if (!isValidTxFormat) {
-    return { valid: false, error: 'Invalid transaction hash format' };
-  }
-  
-  // Mock verification - replace with real blockchain check
-  console.log(`[ETH PAYMENT] Verifying tx: ${txHash} for ${expectedAmount} ETH`);
-  
-  // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 100));
-  
-  return { 
-    valid: true, 
-    amount: expectedAmount,
-    from: '0x1234...', // Mock sender
-    to: '0x5678...', // Mock receiver (your wallet)
-    blockNumber: 123456,
-    verified: true
+  return async (request) => {
+    // Internal bypass
+    const internalKey = request.headers.get('x-internal-key');
+    if (INTERNAL_SECRET && internalKey === INTERNAL_SECRET) {
+      return fullHandler(request);
+    }
+    
+    // Check if payment header is present
+    const paymentHeader = request.headers.get('payment-signature') || request.headers.get('x-payment');
+    if (paymentHeader) {
+      return x402Handler(request);
+    }
+    
+    // No payment = free summary
+    return summaryHandler(request);
   };
 }

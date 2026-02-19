@@ -168,38 +168,38 @@ function Pricing() {
         <div className="text-center mb-6">
           <h3 className="text-xl font-black text-white/70 mb-2 tracking-wider">FREE</h3>
           <div className="text-4xl font-black text-[#00f0ff] mb-1">$0</div>
-          <div className="text-xs text-white/30 tracking-wider">forever</div>
+          <div className="text-xs text-white/30 tracking-wider">no signup needed</div>
         </div>
         <ul className="space-y-3 mb-8">
-          {['10 API calls per day', '/pulse and /scan endpoints', 'Real-time threat scores', 'Community support'].map(t => (
+          {['/api/pulse summary (threat level, market count)', 'No API key required', 'No registration', 'Perfect for monitoring'].map(t => (
             <li key={t} className="flex items-center gap-3 text-sm text-white/50">
               <span className="w-1 h-1 rounded-full bg-[#00f0ff]/50" />{t}
             </li>
           ))}
         </ul>
         <Link href="/about" className="block w-full py-3 text-center bg-white/[0.04] border border-[#00f0ff]/20 text-[#00f0ff] rounded-xl font-bold tracking-wider hover:bg-[#00f0ff]/10 transition-all text-sm">
-          GET STARTED
+          TRY NOW
         </Link>
       </div>
 
       <div ref={refR} className={`${cardBase} bg-gradient-to-br from-[#00f0ff]/[0.06] to-transparent border border-[#00f0ff]/20 relative overflow-hidden`}
         style={{ opacity: visR ? 1 : 0, transform: visR ? 'translateX(0)' : 'translateX(30px)' }}>
-        <div className="absolute -top-2 -right-2 bg-[#00f0ff] text-[#0a0a0f] text-[10px] font-black px-3 py-1 rounded-full rotate-12">PRO</div>
+        <div className="absolute -top-2 -right-2 bg-[#00f0ff] text-[#0a0a0f] text-[10px] font-black px-3 py-1 rounded-full rotate-12">x402</div>
         <div className="text-center mb-6">
-          <h3 className="text-xl font-black text-white/70 mb-2 tracking-wider">PRO</h3>
-          <div className="text-4xl font-black text-[#00f0ff] mb-1">0.005 ETH</div>
-          <div className="text-xs text-white/30 tracking-wider">per month</div>
+          <h3 className="text-xl font-black text-white/70 mb-2 tracking-wider">PAY PER CALL</h3>
+          <div className="text-4xl font-black text-[#00f0ff] mb-1">$0.001</div>
+          <div className="text-xs text-white/30 tracking-wider">USDC per request · Base network</div>
         </div>
         <ul className="space-y-3 mb-8">
-          {['Unlimited API calls', 'Full API access (signals, alerts, scanner)', 'Real-time webhook alerts', 'Priority support', 'Historical backtesting data'].map(t => (
+          {['Full /api/scan, /api/pulse, /api/news', 'No API key — pay with USDC on Base', 'Agent-native via x402 protocol', 'Onchain settlement via Coinbase CDP', 'Works with @x402/fetch'].map(t => (
             <li key={t} className="flex items-center gap-3 text-sm text-white/50">
               <span className="w-1 h-1 rounded-full bg-[#00f0ff]/50" />{t}
             </li>
           ))}
         </ul>
-        <Link href="/pro" className="block w-full py-3 text-center bg-[#00f0ff] text-[#0a0a0f] rounded-xl font-black tracking-wider hover:bg-[#00f0ff]/80 transition-all text-sm">
-          UPGRADE TO PRO
-        </Link>
+        <a href="https://x402.org" target="_blank" rel="noopener noreferrer" className="block w-full py-3 text-center bg-[#00f0ff] text-[#0a0a0f] rounded-xl font-black tracking-wider hover:bg-[#00f0ff]/80 transition-all text-sm">
+          LEARN ABOUT x402
+        </a>
       </div>
     </div>
   );
@@ -227,30 +227,26 @@ function TrustSignals({ pulse }) {
   );
 }
 
-/* ── EMAIL SIGNUP ──────────────────────────────────────────────────── */
-function EmailSignup() {
-  const [email, setEmail] = useState('');
-  const [status, setStatus] = useState('idle');
-  const submit = async (e) => {
-    e.preventDefault();
-    if (!email.trim() || status === 'loading') return;
-    setStatus('loading');
-    try {
-      const r = await fetch('/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim(), source: 'landing-v3' }) });
-      setStatus(r.ok ? 'success' : 'error');
-      if (r.ok) setEmail('');
-    } catch { setStatus('error'); }
-    setTimeout(() => setStatus('idle'), 3000);
-  };
+/* ── CODE EXAMPLE ─────────────────────────────────────────────────── */
+function CodeExample() {
   return (
-    <form onSubmit={submit} className="flex flex-col sm:flex-row gap-4 max-w-md mx-auto">
-      <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@email.com" required disabled={status === 'loading'}
-        className="flex-1 px-4 py-3 bg-white/[0.04] border border-white/10 rounded-xl text-white/80 placeholder:text-white/20 focus:outline-none focus:border-[#00f0ff]/40 transition-all disabled:opacity-50 text-sm" />
-      <button type="submit" disabled={status === 'loading'}
-        className="px-8 py-3 bg-[#00f0ff] text-[#0a0a0f] font-black tracking-wider rounded-xl hover:bg-[#00f0ff]/80 transition-all disabled:opacity-50 whitespace-nowrap text-sm">
-        {status === 'loading' ? 'SENDING...' : status === 'success' ? '✓ SENT' : status === 'error' ? 'ERROR' : 'GET ACCESS'}
-      </button>
-    </form>
+    <div className="max-w-2xl mx-auto">
+      <div className="bg-white/[0.02] border border-white/[0.06] rounded-2xl p-6 overflow-x-auto">
+        <div className="text-[10px] text-white/30 tracking-[0.2em] uppercase mb-4">How agents call Prescience</div>
+        <pre className="text-sm text-white/60 font-mono leading-relaxed whitespace-pre">
+{`import { wrapFetch } from "@x402/fetch";
+import { createWalletClient } from "viem";
+
+const x402Fetch = wrapFetch(fetch, walletClient);
+
+const res = await x402Fetch(
+  "https://prescience.markets/api/scan"
+);
+const data = await res.json();
+// → { scan: [...], meta: { markets_scanned: 20 } }`}
+        </pre>
+      </div>
+    </div>
   );
 }
 
@@ -382,9 +378,9 @@ export default function PrescienceLanding() {
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
             <div className="text-[10px] text-[#00f0ff]/30 tracking-[0.4em] font-mono mb-3">ACCESS</div>
-            <h2 className="text-3xl md:text-4xl font-black tracking-wide text-white/80 mb-4">Simple Pricing</h2>
+            <h2 className="text-3xl md:text-4xl font-black tracking-wide text-white/80 mb-4">Pay Per Call</h2>
             <p className="text-white/30 max-w-xl mx-auto text-sm font-sans">
-              Start free, upgrade when you need unlimited access. Pay with ETH.
+              No API keys. No subscriptions. Pay $0.001 USDC per call via x402 on Base.
             </p>
           </div>
           <Pricing />
@@ -415,7 +411,7 @@ export default function PrescienceLanding() {
           <p className="text-base text-white/40 mb-10 max-w-xl mx-auto font-sans leading-relaxed">
             Get early access to Prescience. Detect insider trading and whale movements in real-time.
           </p>
-          <EmailSignup />
+          <CodeExample />
           <div className="mt-8 flex items-center justify-center gap-6 text-[10px] text-white/15 tracking-wider">
             <span>No spam</span><span>·</span><span>Cancel anytime</span><span>·</span><span>Free during beta</span>
           </div>

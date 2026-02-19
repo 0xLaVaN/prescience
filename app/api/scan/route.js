@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getActiveMarkets, getMarketTrades, fetchJSON } from '../_lib/polymarket';
 import { getKalshiActiveMarkets, getKalshiMarketTrades } from '../_lib/kalshi';
-import { requireAuth } from '../_lib/auth.js';
+import { requirePayment } from '../_lib/auth.js';
 
 const GAMMA_API = 'https://gamma-api.polymarket.com';
 const MARKET_CACHE_TTL = 15 * 60 * 1000;
@@ -259,5 +259,5 @@ async function handleScan(request) {
   }
 }
 
-// Export with auth middleware
-export const GET = requireAuth(handleScan);
+// Export with x402 payment gate
+export const GET = requirePayment(handleScan);

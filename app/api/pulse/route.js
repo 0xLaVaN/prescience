@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getResolvedMarkets, getActiveMarkets, getMarketTrades, computePrescienceScore } from '../_lib/polymarket';
-import { requireAuth } from '../_lib/auth.js';
+import { requirePaymentForFull } from '../_lib/auth.js';
 
 async function handlePulse(request) {
   try {
@@ -156,5 +156,32 @@ async function handlePulse(request) {
   }
 }
 
-// Export with auth middleware
-export const GET = requireAuth(handlePulse);
+// Free summary handler (no payment needed)
+async function handlePulseSummary(request) {
+  try {
+    const fullResponse = await handlePulse(request);
+    const data = await fullResponse.json();
+    // Return summary only: market count, threat level, no hot_markets details
+    return NextResponse.json({
+      pulse: {
+        timestamp: data.pulse?.timestamp,
+        markets_scanned: data.pulse?.markets_scanned,
+        threat_level: data.pulse?.threat_level,
+        highest_score: data.pulse?.highest_score,
+      },
+      note: 'Free summary. Pay $0.001 USDC via x402 for full data including hot markets.',
+      x402: {
+        protocol: 'https://x402.org',
+        price: '$0.001 USDC per request',
+        network: 'Base (eip155:8453)',
+      },
+      engine: 'Prescience v2.1',
+      tagline: 'See who sees first.',
+    });
+  } catch (err) {
+    return NextResponse.json({ error: 'Failed to generate pulse summary', detail: err.message }, { status: 500 });
+  }
+}
+
+// Export: free summary without payment, full data with x402 payment
+export const GET = requirePaymentForFull(handlePulseSummary, handlePulse);
