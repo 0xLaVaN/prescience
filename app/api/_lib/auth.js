@@ -129,6 +129,15 @@ export function requirePayment(handler) {
       return handler(request);
     }
 
+    // Allow same-origin frontend requests (our own wire/scanner pages)
+    const referer = request.headers.get('referer') || '';
+    const origin = request.headers.get('origin') || '';
+    const host = request.headers.get('host') || '';
+    const isSameOrigin = referer.includes(host) || origin.includes(host);
+    if (isSameOrigin && host.includes('prescience.markets')) {
+      return handler(request);
+    }
+
     // Check for payment header
     const paymentHeader = request.headers.get('payment-signature') || request.headers.get('x-payment');
     
@@ -163,6 +172,15 @@ export function requirePaymentForFull(summaryHandler, fullHandler) {
     // Internal bypass
     const internalKey = request.headers.get('x-internal-key');
     if (INTERNAL_SECRET && internalKey === INTERNAL_SECRET) {
+      return fullHandler(request);
+    }
+
+    // Same-origin frontend gets full data
+    const referer = request.headers.get('referer') || '';
+    const origin = request.headers.get('origin') || '';
+    const host = request.headers.get('host') || '';
+    const isSameOrigin = referer.includes(host) || origin.includes(host);
+    if (isSameOrigin && host.includes('prescience.markets')) {
       return fullHandler(request);
     }
 
