@@ -1,12 +1,12 @@
 /**
  * PRESCIENCE — Kalshi data fetching via direct REST API
- * No auth required. Fast (<2s). Cursor pagination.
- * Background caching model: never blocks scan responses.
+ * Strategy: fetch events (filtered non-sports), then fetch their markets.
+ * Background caching, never blocks scan responses.
  */
 
 const KALSHI_API = 'https://api.elections.kalshi.com/trade-api/v2';
-const CACHE_TTL = 5 * 60 * 1000;
 const MARKET_CACHE_TTL = 15 * 60 * 1000;
+const CACHE_TTL = 5 * 60 * 1000;
 const cache = new Map();
 let lastRefreshAttempt = 0;
 
@@ -24,45 +24,59 @@ function cached(key, ttl, fn) {
 }
 
 /**
- * Fetch all active Kalshi markets via cursor pagination.
- * Filters out sports parlays (KXMVESPORTS).
+ * Fetch non-sports Kalshi events, then their markets.
  */
-export async function getKalshiActiveMarkets(maxMarkets = 500) {
+export async function getKalshiActiveMarkets(maxMarkets = 300) {
   return cached(`kalshi_active_${maxMarkets}`, MARKET_CACHE_TTL, async () => {
-    const allMarkets = [];
+    // Step 1: Get all open events (fast, <1s)
+    let allEvents = [];
     let cursor = null;
-    let failCount = 0;
-
-    while (allMarkets.length < maxMarkets && failCount < 3) {
+    for (let page = 0; page < 5; page++) {
       try {
-        let url = `${KALSHI_API}/markets?status=open&limit=100`;
+        let url = `${KALSHI_API}/events?status=open&limit=200`;
         if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
-
         const res = await fetch(url);
-        if (!res.ok) throw new Error(`Kalshi API ${res.status}`);
+        if (!res.ok) break;
         const data = await res.json();
-
-        const markets = data.markets || [];
-        if (markets.length === 0) break;
-
-        // Filter out sports parlays
-        const filtered = markets.filter(m =>
-          !m.event_ticker?.startsWith('KXMVESPORTS')
-        );
-
-        for (const m of filtered) {
-          allMarkets.push(mapKalshiMarket(m));
-        }
-
+        if (!data.events?.length) break;
+        allEvents.push(...data.events);
         cursor = data.cursor;
-        if (!cursor) break;
+        if (!cursor || data.events.length < 200) break;
       } catch (err) {
-        console.error(`Kalshi batch fetch failed:`, err.message);
-        failCount++;
+        console.error('Kalshi events fetch failed:', err.message);
+        break;
       }
     }
 
-    // Sort by volume descending
+    // Filter out sports
+    const nonSportsEvents = allEvents.filter(e => e.category !== 'Sports');
+    console.log(`Kalshi: ${allEvents.length} events, ${nonSportsEvents.length} non-sports`);
+
+    // Step 2: Fetch markets for non-sports events (concurrent batches)
+    const allMarkets = [];
+    const BATCH = 10;
+    const eventTickers = nonSportsEvents.map(e => e.event_ticker);
+
+    for (let i = 0; i < eventTickers.length && allMarkets.length < maxMarkets; i += BATCH) {
+      const batch = eventTickers.slice(i, i + BATCH);
+      const results = await Promise.all(
+        batch.map(ticker =>
+          fetch(`${KALSHI_API}/markets?event_ticker=${encodeURIComponent(ticker)}&status=open&limit=50`)
+            .then(r => r.ok ? r.json() : { markets: [] })
+            .then(d => d.markets || [])
+            .catch(() => [])
+        )
+      );
+      for (const markets of results) {
+        for (const m of markets) {
+          // Extra filter: skip anything with sports-like event tickers
+          if (m.event_ticker?.match(/^KX(MVESPORTS|NBA|NHL|MLB|NFL|SOCCER|EPL|NCAA|UFC|WNBA|MLS)/)) continue;
+          allMarkets.push(mapKalshiMarket(m));
+        }
+      }
+    }
+
+    // Sort by volume
     allMarkets.sort((a, b) => (parseFloat(b.volume24hr) || 0) - (parseFloat(a.volume24hr) || 0));
     return allMarkets.slice(0, maxMarkets);
   });
@@ -92,18 +106,11 @@ function mapKalshiMarket(m) {
   };
 }
 
-/**
- * Get cached Kalshi data without blocking. Triggers background refresh if stale.
- */
 export function getKalshiCached() {
-  const entry = cache.get('kalshi_active_500');
+  const entry = cache.get('kalshi_active_300');
   const data = entry ? entry.data : [];
   const age = entry ? Date.now() - entry.ts : Infinity;
-
-  if (age > MARKET_CACHE_TTL) {
-    triggerBackgroundRefresh();
-  }
-
+  if (age > MARKET_CACHE_TTL) triggerBackgroundRefresh();
   return { data, age, isFresh: age < MARKET_CACHE_TTL };
 }
 
@@ -111,27 +118,21 @@ function triggerBackgroundRefresh() {
   const now = Date.now();
   if (now - lastRefreshAttempt < 30000) return;
   lastRefreshAttempt = now;
-  getKalshiActiveMarkets(500).catch(err => {
+  getKalshiActiveMarkets(300).catch(err => {
     console.error('Kalshi background refresh failed:', err.message);
   });
 }
 
-/**
- * Fetch trades for a Kalshi market (for deeper analysis).
- * Uses direct REST API with timeout.
- */
 export async function getKalshiMarketTrades(ticker, limit = 300) {
   return cached(`kalshi_trades_${ticker}_${limit}`, CACHE_TTL, async () => {
     try {
       const res = await Promise.race([
         fetch(`${KALSHI_API}/markets/${encodeURIComponent(ticker)}/trades?limit=${limit}`),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Kalshi trades timeout')), 5000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
       ]);
       if (!res.ok) return [];
       const data = await res.json();
-      const trades = data.trades || [];
-
-      return trades.map(trade => ({
+      return (data.trades || []).map(trade => ({
         timestamp: Math.floor(new Date(trade.created_time || trade.ts).getTime() / 1000),
         conditionId: ticker,
         outcome: trade.taker_side === 'yes' ? 'Yes' : 'No',
@@ -142,7 +143,7 @@ export async function getKalshiMarketTrades(ticker, limit = 300) {
         exchange: 'kalshi'
       }));
     } catch (error) {
-      console.error(`Error fetching Kalshi trades for ${ticker}:`, error.message);
+      console.error(`Kalshi trades error for ${ticker}:`, error.message);
       return [];
     }
   });
@@ -150,38 +151,23 @@ export async function getKalshiMarketTrades(ticker, limit = 300) {
 
 export function findCrossExchangeMatches(polymarkets, kalshiMarkets) {
   const matches = [];
-
   for (const poly of polymarkets) {
     for (const kalshi of kalshiMarkets) {
-      const similarity = jaccardSimilarity(
-        extractKeywords(poly.question),
-        extractKeywords(kalshi.question)
-      );
-
+      const similarity = jaccardSimilarity(extractKeywords(poly.question), extractKeywords(kalshi.question));
       if (similarity > 0.6) {
         const polyPrice = Math.max(...(JSON.parse(poly.outcomePrices || '[]').map(p => parseFloat(p) || 0)));
         const kalshiPrice = Math.max(...(kalshi.outcomePrices.map(p => parseFloat(p) || 0)));
-
-        matches.push({
-          polymarket: poly,
-          kalshi: kalshi,
-          similarity,
-          priceDivergence: Math.abs(polyPrice - kalshiPrice),
-          polyPrice,
-          kalshiPrice
-        });
+        matches.push({ polymarket: poly, kalshi, similarity, priceDivergence: Math.abs(polyPrice - kalshiPrice), polyPrice, kalshiPrice });
       }
     }
   }
-
   return matches.sort((a, b) => b.priceDivergence - a.priceDivergence);
 }
 
 function extractKeywords(question) {
   if (!question) return [];
   const stopWords = ['will', 'the', 'be', 'in', 'on', 'at', 'to', 'for', 'of', 'a', 'an', 'and', 'or', 'but', 'is', 'are', 'was', 'were'];
-  return question.toLowerCase().replace(/[^\w\s]/g, ' ').split(/\s+/)
-    .filter(w => w.length > 2 && !stopWords.includes(w)).slice(0, 10);
+  return question.toLowerCase().replace(/[^\w\s]/g, ' ').split(/\s+/).filter(w => w.length > 2 && !stopWords.includes(w)).slice(0, 10);
 }
 
 function jaccardSimilarity(a, b) {
