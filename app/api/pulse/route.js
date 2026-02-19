@@ -104,12 +104,13 @@ export async function GET() {
         let flowV2Sc;
         if (pFlowV2 === 'MINORITY_HEAVY') { const minR = (pMinFlow + pMajFlow) > 0 ? pMinFlow / (pMinFlow + pMajFlow) : 0; flowV2Sc = 4 + Math.min(1, minR); }
         else if (pFlowV2 === 'MIXED') { const minR = (pMinFlow + pMajFlow) > 0 ? pMinFlow / (pMinFlow + pMajFlow) : 0; flowV2Sc = 2 + Math.min(1, minR * 3); }
-        else { flowV2Sc = absImb * 1; }
+        else { flowV2Sc = absImb * 0.3; }
         const normFlowV2p = flowV2Sc / 5;
-        const volLiqW = pFlowV2 === 'MAJORITY_ALIGNED' ? 0.5 : 1.0;
+        const volLiqW = pFlowV2 === 'MAJORITY_ALIGNED' ? 0.3 : 1.0;
 
         const raw = normFlowV2p * 5 + largePosRatio * 3 + normFreshExcess * 2 + volLiq * volLiqW;
         let score = Math.round((raw / 11) * 100);
+        if (pFlowV2 === 'MAJORITY_ALIGNED') score = Math.min(score, 8);
 
         if (excessFresh <= 0) score = Math.min(score, 6);
         if (largePos === 0) score = Math.min(score, 50);

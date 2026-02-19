@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getActiveMarkets, getMarketTrades, fetchJSON } from '../_lib/polymarket';
+import { getKalshiActiveMarkets, getKalshiMarketTrades } from '../_lib/kalshi';
 
 const GAMMA_API = 'https://gamma-api.polymarket.com';
 const MARKET_CACHE_TTL = 15 * 60 * 1000;
@@ -9,26 +10,69 @@ export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const slug = searchParams.get('slug');
+    const exchange = searchParams.get('exchange'); // 'polymarket', 'kalshi', or 'both'
     const limit = Math.min(parseInt(searchParams.get('limit')) || 20, 30);
 
-    let activeMarkets;
+    let activeMarkets = [];
+    
     if (slug) {
+      // Handle specific market by slug
       const cacheKey = `market_slug_${slug}`;
       let market = slugCache.get(cacheKey);
       if (!market || Date.now() - market._ts > MARKET_CACHE_TTL) {
         const results = await fetchJSON(`${GAMMA_API}/markets?slug=${encodeURIComponent(slug)}&limit=1`);
         market = results && results.length > 0 ? results[0] : null;
-        if (market) { market._ts = Date.now(); slugCache.set(cacheKey, market); }
+        if (market) { 
+          market._ts = Date.now(); 
+          market.exchange = 'polymarket';
+          slugCache.set(cacheKey, market);
+        }
       }
       activeMarkets = market ? [market] : [];
     } else {
-      activeMarkets = await getActiveMarkets(limit);
+      // Fetch from multiple exchanges based on parameter
+      const fetchPolymarket = !exchange || exchange === 'polymarket' || exchange === 'both';
+      const fetchKalshi = exchange === 'kalshi' || exchange === 'both';
+      
+      const marketPromises = [];
+      
+      if (fetchPolymarket) {
+        marketPromises.push(
+          getActiveMarkets(Math.ceil(limit / (fetchKalshi ? 2 : 1)))
+            .then(markets => markets.map(m => ({ ...m, exchange: 'polymarket' })))
+            .catch(err => {
+              console.error('Polymarket fetch failed:', err);
+              return [];
+            })
+        );
+      }
+      
+      if (fetchKalshi) {
+        marketPromises.push(
+          getKalshiActiveMarkets(Math.ceil(limit / (fetchPolymarket ? 2 : 1)))
+            .then(markets => markets.map(m => ({ ...m, exchange: 'kalshi' })))
+            .catch(err => {
+              console.error('Kalshi fetch failed:', err);
+              return [];
+            })
+        );
+      }
+      
+      const marketResults = await Promise.all(marketPromises);
+      activeMarkets = marketResults.flat().slice(0, limit);
     }
 
     const markets = [];
     for (const market of activeMarkets) {
       try {
-        const trades = await getMarketTrades(market.conditionId, 300);
+        // Fetch trades based on exchange
+        let trades;
+        if (market.exchange === 'kalshi') {
+          trades = await getKalshiMarketTrades(market.conditionId, 300);
+        } else {
+          trades = await getMarketTrades(market.conditionId, 300);
+        }
+        
         if (!trades || trades.length < 3) continue;
 
         const now = Date.now() / 1000;
@@ -71,6 +115,11 @@ export async function GET(request) {
 
         const absImbalance = Math.abs(flowImbalance);
         const totalWallets = Object.keys(wallets).length;
+
+        // Volume floor: Skip scoring markets with insufficient activity (pure noise)
+        if (totalWallets < 10 || totalVolume < 500) {
+          continue; // Skip this market entirely
+        }
         const freshWalletRatio = totalWallets > 0 ? freshWalletCount / totalWallets : 0;
         const isSampleCapped = trades.length >= 295;
         const BASELINE_FRESH_RATIO = isSampleCapped ? 0.60 : 0.30;
@@ -117,14 +166,21 @@ export async function GET(request) {
         }
         const normFlowV2 = flowV2Score / 5;
         const normLargePositionRatio = Math.min(largePositionRatio, 1);
-        const normFreshExcess = Math.min(excessFreshRatio / 0.4, 1);
+        
+        // FIX: Apply dampening to fresh_wallet_excess based on flow_direction_v2 (PM-007)
+        const effectiveFwExcess = excessFreshRatio * (
+          flowDirectionV2 === 'MAJORITY_ALIGNED' ? 0.2 : 
+          flowDirectionV2 === 'MIXED' ? 0.6 : 1.0
+        );
+        const normFreshExcess = Math.min(effectiveFwExcess / 0.4, 1);
+        
         const volLiqWeightMultiplier = flowDirectionV2 === 'MAJORITY_ALIGNED' ? 0.5 : 1.0;
         const normVolLiq = volumeVsLiquidityRatio * volLiqWeightMultiplier;
 
         const rawConviction = normFlowV2 * 5 + normLargePositionRatio * 3 + normFreshExcess * 2 + normVolLiq * 1;
         let threatScore = Math.round((rawConviction / 11) * 100);
 
-        if (totalVolume < 5000 || totalWallets < 10) threatScore = Math.min(threatScore, 15);
+        // Volume floor check moved above - markets with <500 USD or <10 wallets are skipped entirely
 
         let consensusDampened = false;
         try {
@@ -149,7 +205,7 @@ export async function GET(request) {
         const threatLevel = threatScore >= 70 ? 'CRITICAL' : threatScore >= 45 ? 'HIGH' : threatScore >= 25 ? 'MODERATE' : 'LOW';
 
         markets.push({
-          exchange: 'polymarket',
+          exchange: market.exchange || 'polymarket',
           question: market.question,
           conditionId: market.conditionId,
           slug: market.slug,
