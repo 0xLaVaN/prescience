@@ -2,8 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
-
 :root {
   --void: #0a0a0f;
   --cyber-cyan: #00f0ff;
@@ -22,9 +20,12 @@
 body {
   background: var(--void);
   color: white;
-  font-family: 'JetBrains Mono', monospace;
   overflow-x: hidden;
 }
+
+/* Font utility classes for components that use inline styles */
+.font-text, .font-sans-text { font-family: var(--font-inter), 'Inter', system-ui, sans-serif !important; }
+.font-data, .font-mono-data { font-family: var(--font-jetbrains), 'JetBrains Mono', monospace !important; }
 
 /* Grid background */
 .grid-bg {

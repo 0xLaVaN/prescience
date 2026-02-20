@@ -24,7 +24,7 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${inter.variable} ${jetbrains.variable}`}>
-      <body className="min-h-screen bg-[#0a0a0f] antialiased grid-bg scanlines font-mono text-white">
+      <body className={`min-h-screen bg-[#0a0a0f] antialiased grid-bg scanlines text-white ${jetbrains.className}`}>
         <Nav />
         <Ticker />
         <main className="pt-[88px]">{children}</main>
