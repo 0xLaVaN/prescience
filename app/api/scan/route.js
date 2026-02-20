@@ -432,14 +432,26 @@ async function handleScan(request) {
       });
     }
 
-    markets.sort((a, b) => b.threat_score - a.threat_score);
-    const outputMarkets = markets.slice(0, limit);
+    // Volume floor output filter: remove any market that slipped through with insufficient activity
+    // This is a belt-and-suspenders guard — the deep scan loop also has a continue check
+    const filteredMarkets = markets.filter(m => {
+      // Lightweight markets (no trade analysis) are OK — they show score=0
+      if (m.scan_depth === 'lightweight') return true;
+      // Deep-scanned markets must meet minimum thresholds
+      if (m.total_wallets !== undefined && m.total_wallets < 10) return false;
+      if (m.total_volume_usd !== undefined && m.total_volume_usd < 500) return false;
+      return true;
+    });
+
+    filteredMarkets.sort((a, b) => b.threat_score - a.threat_score);
+    const outputMarkets = filteredMarkets.slice(0, limit);
 
     return NextResponse.json({
       scan: outputMarkets,
       meta: {
         markets_scanned: outputMarkets.length,
-        total_markets_analyzed: markets.length,
+        total_markets_analyzed: filteredMarkets.length,
+        volume_floor_filtered: markets.length - filteredMarkets.length,
         polymarket_markets: polymarketCount || markets.filter(m => m.exchange === 'polymarket').length,
         kalshi_markets: kalshiCount || markets.filter(m => m.exchange === 'kalshi').length,
         dampened_markets: dampenedCount,
