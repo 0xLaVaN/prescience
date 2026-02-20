@@ -274,16 +274,23 @@ async function handleSignals(request) {
           const edge = fairValue !== null ? Math.round((fairValue - minorityPrice) * 100) / 100 : null;
           const edgePct = (edge !== null && minorityPrice > 0) ? Math.round((edge / minorityPrice) * 10000) / 100 : null;
 
-          // Skip if edge too small
-          if (edge !== null && Math.abs(edge) < 0.05) continue;
+          // Skip if edge too small (for BUY signals; WATCH can have smaller edge)
+          const minEdge = parseFloat(searchParams.get('min_edge')) || 0.05;
 
           // Determine action
           let action;
-          if (isDampened || expiryNoise || threatScore < 10) {
+          if (isDampened || expiryNoise || threatScore < 3) {
             action = 'AVOID';
           } else if (threatScore > 20 && flowDirectionV2 === 'MINORITY_HEAVY' && confidence >= 3) {
-            action = minorityOutcome === 'Yes' ? 'BUY_YES' : 'BUY_NO';
-          } else if (threatScore >= 10 || confidence === 2) {
+            // Strong BUY signal — require minimum edge
+            if (edge !== null && Math.abs(edge) < minEdge) {
+              action = 'WATCH';
+            } else {
+              action = minorityOutcome === 'Yes' ? 'BUY_YES' : 'BUY_NO';
+            }
+          } else if (threatScore >= 5 && (flowDirectionV2 === 'MINORITY_HEAVY' || flowDirectionV2 === 'MIXED')) {
+            action = 'WATCH';
+          } else if (threatScore >= 10) {
             action = 'WATCH';
           } else {
             action = 'AVOID';
