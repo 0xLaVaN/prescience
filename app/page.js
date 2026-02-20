@@ -293,7 +293,7 @@ export default function PrescienceLanding() {
                 Sees First
               </span>
             </h1>
-            <p className="text-lg md:text-xl text-white/40 max-w-2xl mx-auto leading-relaxed" style={{ fontFamily: "'Inter', sans-serif" }}>
+            <p className="text-lg md:text-xl text-white/40 max-w-2xl mx-auto leading-relaxed" style={{ fontFamily: "var(--font-inter), 'Inter', sans-serif" }}>
               Real-time detection of insider trading and whale movements across 500+ prediction markets.
             </p>
           </div>
@@ -332,7 +332,7 @@ export default function PrescienceLanding() {
           <div className="text-center mb-14">
             <div className="text-[10px] text-[#00f0ff]/30 tracking-[0.4em] font-mono mb-3">LIVE FEED</div>
             <h2 className="text-3xl md:text-4xl font-black tracking-wide text-white/80 mb-4">Market Intelligence</h2>
-            <p className="text-white/30 max-w-xl mx-auto text-sm " style={{ fontFamily: "'Inter', sans-serif" }}>Real-time threat scores from our AI surveillance system.</p>
+            <p className="text-white/30 max-w-xl mx-auto text-sm " style={{ fontFamily: "var(--font-inter), 'Inter', sans-serif" }}>Real-time threat scores from our AI surveillance system.</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {loading ? Array.from({ length: 3 }).map((_, i) => (
@@ -340,7 +340,7 @@ export default function PrescienceLanding() {
             )) : markets.length > 0 ? markets.map((m, i) => (
               <LiveMarketCard key={i} market={m} index={i} />
             )) : (
-              <div className="col-span-3 text-center py-16 text-white/20  text-sm" style={{ fontFamily: "'Inter', sans-serif" }}>
+              <div className="col-span-3 text-center py-16 text-white/20  text-sm" style={{ fontFamily: "var(--font-inter), 'Inter', sans-serif" }}>
                 All markets clean. AI will alert when suspicious activity is detected.
               </div>
             )}
@@ -363,7 +363,7 @@ export default function PrescienceLanding() {
           <div className="text-center mb-16">
             <div className="text-[10px] text-[#00f0ff]/30 tracking-[0.4em] font-mono mb-3">METHODOLOGY</div>
             <h2 className="text-3xl md:text-4xl font-black tracking-wide text-white/80 mb-4">How Prescience Works</h2>
-            <p className="text-white/30 max-w-xl mx-auto text-sm " style={{ fontFamily: "'Inter', sans-serif" }}>
+            <p className="text-white/30 max-w-xl mx-auto text-sm " style={{ fontFamily: "var(--font-inter), 'Inter', sans-serif" }}>
               Three-stage intelligence pipeline. Scan. Detect. Alert.
             </p>
           </div>
@@ -379,7 +379,7 @@ export default function PrescienceLanding() {
           <div className="text-center mb-16">
             <div className="text-[10px] text-[#00f0ff]/30 tracking-[0.4em] font-mono mb-3">ACCESS</div>
             <h2 className="text-3xl md:text-4xl font-black tracking-wide text-white/80 mb-4">Pay Per Call</h2>
-            <p className="text-white/30 max-w-xl mx-auto text-sm " style={{ fontFamily: "'Inter', sans-serif" }}>
+            <p className="text-white/30 max-w-xl mx-auto text-sm " style={{ fontFamily: "var(--font-inter), 'Inter', sans-serif" }}>
               No API keys. No subscriptions. Pay $0.001 USDC per call via x402 on Base.
             </p>
           </div>
@@ -408,7 +408,7 @@ export default function PrescienceLanding() {
           <h2 className="text-4xl md:text-5xl font-black tracking-wide text-white/90 mb-6 leading-tight">
             Ready to See Who Sees First?
           </h2>
-          <p className="text-base text-white/40 mb-10 max-w-xl mx-auto  leading-relaxed" style={{ fontFamily: "'Inter', sans-serif" }}>
+          <p className="text-base text-white/40 mb-10 max-w-xl mx-auto  leading-relaxed" style={{ fontFamily: "var(--font-inter), 'Inter', sans-serif" }}>
             Get early access to Prescience. Detect insider trading and whale movements in real-time.
           </p>
           <CodeExample />

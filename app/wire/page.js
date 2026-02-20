@@ -40,8 +40,8 @@ const globalStyles = `
     box-shadow: inset 0 0 0 1px rgba(0, 240, 255, 0.1);
   }
   .wire-table-row { transition: all 0.2s ease; cursor: pointer; }
-  .font-data { font-family: 'JetBrains Mono', monospace; }
-  .font-text { font-family: 'Inter', sans-serif; }
+  .font-data { font-family: var(--font-jetbrains), 'JetBrains Mono', monospace; }
+  .font-text { font-family: var(--font-inter), 'Inter', sans-serif; }
 `;
 
 /* ═══════════════════════════════════════════════════════════════════
