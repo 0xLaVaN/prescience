@@ -1,7 +1,20 @@
 import './globals.css';
+import { Inter, JetBrains_Mono } from 'next/font/google';
 import Nav from './components/Nav';
 import Ticker from './components/Ticker';
 import Footer from './components/Footer';
+
+const inter = Inter({ 
+  subsets: ['latin'], 
+  variable: '--font-inter',
+  display: 'swap',
+});
+
+const jetbrains = JetBrains_Mono({ 
+  subsets: ['latin'], 
+  variable: '--font-jetbrains',
+  display: 'swap',
+});
 
 export const metadata = {
   title: 'Prescience | Prediction Market Intelligence',
@@ -10,11 +23,7 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
-      <head>
-        <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-        <style>{`body { --font-inter: 'Inter', sans-serif; } .font-sans { font-family: 'Inter', sans-serif !important; }`}</style>
-      </head>
+    <html lang="en" className={`${inter.variable} ${jetbrains.variable}`}>
       <body className="min-h-screen bg-[#0a0a0f] antialiased grid-bg scanlines font-mono text-white">
         <Nav />
         <Ticker />
