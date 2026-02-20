@@ -25,7 +25,7 @@ body {
 }
 
 /* Font utility classes */
-.font-text { font-family: 'Inter', system-ui, -apple-system, sans-serif !important; }
+.font-text { font-family: 'Geist', system-ui, -apple-system, sans-serif !important; }
 .font-data { font-family: 'JetBrains Mono', monospace !important; }
 
 /* Grid background */

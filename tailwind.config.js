@@ -16,7 +16,7 @@ module.exports = {
       },
       fontFamily: {
         mono: ["'JetBrains Mono'", 'monospace'],
-        sans: ["'Inter'", 'system-ui', '-apple-system', 'sans-serif'],
+        sans: ["'Geist'", 'system-ui', '-apple-system', 'sans-serif'],
       },
     },
   },
