@@ -6,6 +6,9 @@ import Footer from './components/Footer';
 export const metadata = {
   title: 'Prescience | Prediction Market Intelligence',
   description: 'Real-time prediction market intelligence. Insider threat detection, flow analysis, and trader behavior signals.',
+  icons: {
+    icon: '/icon.svg',
+  },
 };
 
 export default function RootLayout({ children }) {
@@ -16,7 +19,7 @@ export default function RootLayout({ children }) {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       </head>
-      <body className="min-h-screen bg-[#0a0a0f] antialiased grid-bg scanlines text-white" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+      <body className="min-h-screen bg-[#0a0a0f] antialiased grid-bg scanlines text-white">
         <Nav />
         <Ticker />
         <main className="pt-[88px]">{children}</main>
