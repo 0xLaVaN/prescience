@@ -1,20 +1,7 @@
 import './globals.css';
-import { Inter, JetBrains_Mono } from 'next/font/google';
 import Nav from './components/Nav';
 import Ticker from './components/Ticker';
 import Footer from './components/Footer';
-
-const inter = Inter({ 
-  subsets: ['latin'], 
-  variable: '--font-inter',
-  display: 'swap',
-});
-
-const jetbrains = JetBrains_Mono({ 
-  subsets: ['latin'], 
-  variable: '--font-jetbrains',
-  display: 'swap',
-});
 
 export const metadata = {
   title: 'Prescience | Prediction Market Intelligence',
@@ -23,8 +10,13 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrains.variable}`}>
-      <body className={`min-h-screen bg-[#0a0a0f] antialiased grid-bg scanlines text-white ${jetbrains.className}`}>
+    <html lang="en">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+      </head>
+      <body className="min-h-screen bg-[#0a0a0f] antialiased grid-bg scanlines text-white" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
         <Nav />
         <Ticker />
         <main className="pt-[88px]">{children}</main>

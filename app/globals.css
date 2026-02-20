@@ -20,12 +20,13 @@
 body {
   background: var(--void);
   color: white;
+  font-family: 'JetBrains Mono', monospace;
   overflow-x: hidden;
 }
 
-/* Font utility classes for components that use inline styles */
-.font-text, .font-sans-text { font-family: var(--font-inter), 'Inter', system-ui, sans-serif !important; }
-.font-data, .font-mono-data { font-family: var(--font-jetbrains), 'JetBrains Mono', monospace !important; }
+/* Font utility classes */
+.font-text { font-family: 'Inter', system-ui, -apple-system, sans-serif !important; }
+.font-data { font-family: 'JetBrains Mono', monospace !important; }
 
 /* Grid background */
 .grid-bg {

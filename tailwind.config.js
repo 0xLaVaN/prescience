@@ -15,8 +15,8 @@ module.exports = {
         'presc-muted': '#6B7280',
       },
       fontFamily: {
-        mono: ['var(--font-jetbrains)', 'JetBrains Mono', 'monospace'],
-        sans: ['var(--font-inter)', 'Inter', 'sans-serif'],
+        mono: ["'JetBrains Mono'", 'monospace'],
+        sans: ["'Inter'", 'system-ui', '-apple-system', 'sans-serif'],
       },
     },
   },
