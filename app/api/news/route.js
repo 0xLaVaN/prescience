@@ -94,3 +94,4 @@ async function handleNews(request) {
 
 // Export with x402 payment gate
 export const GET = requirePayment(handleNews);
+export { handleNews };

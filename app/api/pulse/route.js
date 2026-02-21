@@ -235,3 +235,4 @@ async function handlePulseSummary(request) {
 
 // Export: free summary without payment, full data with x402 payment
 export const GET = requirePaymentForFull(handlePulseSummary, handlePulse);
+export { handlePulse };

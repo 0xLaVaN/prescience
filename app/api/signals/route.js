@@ -413,3 +413,4 @@ async function handleSignals(request) {
 }
 
 export const GET = requirePayment(handleSignals);
+export { handleSignals };

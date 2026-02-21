@@ -490,3 +490,4 @@ async function handleScan(request) {
 }
 
 export const GET = requirePayment(handleScan);
+export { handleScan };
