@@ -288,6 +288,30 @@ async function handleScan(request) {
         let freshExcessCapped = false;
         if (excessFreshRatio <= 0) { threatScore = Math.min(threatScore, 6); freshExcessCapped = true; }
 
+        // Veteran minority flow scoring: detect large counter-consensus flows from established wallets
+        let veteranMinorityFlowScore = 0;
+        let veteranFlowNote = '';
+        if (flowDirectionV2 === 'MINORITY_HEAVY' && excessFreshRatio < 0.05 && minoritySideFlow >= 50000 && !consensusDampened) {
+          // Base score: 2-6 based on minority flow magnitude
+          if (minoritySideFlow >= 500000) veteranMinorityFlowScore = 6;
+          else if (minoritySideFlow >= 200000) veteranMinorityFlowScore = 4;
+          else if (minoritySideFlow >= 100000) veteranMinorityFlowScore = 3;
+          else veteranMinorityFlowScore = 2;
+
+          // Time sensitivity multiplier
+          const daysToResolution = market.endDate ? Math.max(0, (new Date(market.endDate).getTime() - Date.now()) / 86400000) : 365;
+          let timeMult = 1.0;
+          if (daysToResolution <= 7) timeMult = 1.5;
+          else if (daysToResolution <= 30) timeMult = 1.2;
+          else if (daysToResolution > 365) timeMult = 0.5;
+
+          veteranMinorityFlowScore = Math.round(veteranMinorityFlowScore * timeMult);
+          threatScore += veteranMinorityFlowScore;
+
+          const daysStr = daysToResolution < 1 ? '<1 day' : Math.round(daysToResolution) + ' days';
+          veteranFlowNote = `$${Math.round(minoritySideFlow / 1000)}K minority ${minorityOutcome}-flow from veteran wallets, ${daysStr} to resolution`;
+        }
+
         let nearExpiryConsensus = false;
         try {
           const prices = JSON.parse(market.outcomePrices || '[]');
@@ -342,6 +366,8 @@ async function handleScan(request) {
           majority_outcome: majorityOutcome,
           consensus_dampened: consensusDampened,
           fresh_excess_capped: freshExcessCapped,
+          veteran_minority_flow_score: veteranMinorityFlowScore,
+          ...(veteranFlowNote && { veteran_flow_note: veteranFlowNote }),
         };
 
         // Add dampening info
