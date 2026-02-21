@@ -3,6 +3,7 @@ import { getActiveMarkets, getAllActiveMarkets, getMarketTrades, fetchJSON } fro
 import { getKalshiActiveMarkets, getKalshiCached, getKalshiMarketTrades, findCrossExchangeMatches } from '../_lib/kalshi';
 import { computeDampening, applyDampening } from '../_lib/dampening';
 import { computeWhaleIntelligence } from '../_lib/analysis.js';
+import { computeVelocity } from '../_lib/velocity.js';
 import { requirePayment } from '../_lib/auth.js';
 
 const GAMMA_API = 'https://gamma-api.polymarket.com';
@@ -353,6 +354,30 @@ async function handleScan(request) {
         // Add cross-exchange data if present
         if (market._crossExchange) {
           entry.cross_exchange = market._crossExchange;
+        }
+
+        // Velocity detection
+        const velocity = computeVelocity(market.conditionId, {
+          volume24h: parseFloat(market.volume24hr) || totalVolume,
+          totalVolume,
+          totalWallets,
+          freshWallets: freshWalletCount,
+          flowDirectionV2,
+          minoritySideFlow,
+          majoritySideFlow,
+          threatScore,
+          liquidity: parseFloat(market.liquidityNum) || 1,
+        });
+        if (velocity.velocity_score > 0) {
+          entry.velocity = {
+            score: velocity.velocity_score,
+            volume_spike_ratio: velocity.volume_spike_ratio,
+            fresh_wallet_rate_per_hour: velocity.fresh_wallet_rate_per_hour,
+            flow_changed: velocity.flow_changed,
+            previous_flow: velocity.previous_flow,
+            breakdown: velocity.details,
+            snapshots_available: velocity.snapshots_available,
+          };
         }
 
         // Whale intelligence (deep scan only, non-blocking)
