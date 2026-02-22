@@ -74,12 +74,30 @@ function AnimatedNumber({ value, duration = 1200, suffix = '' }) {
 
 /* ── THREAT GAUGE ─────────────────────────────────────────────────── */
 function ThreatGauge({ level, score, marketsScanned }) {
+  const [displayScore, setDisplayScore] = useState(0);
+  const [animated, setAnimated] = useState(false);
+
+  useEffect(() => {
+    if (score == null || animated) return;
+    setAnimated(true);
+    const target = score;
+    const duration = 1800;
+    const start = performance.now();
+    const tick = (now) => {
+      const t = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(2, -10 * t);
+      setDisplayScore(Math.round(eased * target));
+      if (t < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, [score, animated]);
+
   const colors = {
     LOW: '#00ff88', MODERATE: '#00f0ff', ELEVATED: '#f0a000',
     HIGH: '#f0a000', SEVERE: '#ff3366', CRITICAL: '#ff3366',
   };
   const color = colors[level] || '#00f0ff';
-  const pct = Math.min((score || 0) / 100, 1);
+  const pct = Math.min((displayScore || 0) / 100, 1);
   const C = 2 * Math.PI * 44;
 
   return (
@@ -89,12 +107,12 @@ function ThreatGauge({ level, score, marketsScanned }) {
           <circle cx="50" cy="50" r="44" fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth="5" />
           <circle cx="50" cy="50" r="44" fill="none" stroke={color} strokeWidth="5" strokeLinecap="round"
             strokeDasharray={C} strokeDashoffset={C * (1 - pct)}
-            style={{ filter: `drop-shadow(0 0 8px ${color})`, transition: 'stroke-dashoffset 1.4s cubic-bezier(0.16,1,0.3,1)' }}
+            style={{ filter: `drop-shadow(0 0 8px ${color})`, transition: 'stroke-dashoffset 0.05s linear' }}
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-5xl font-black tabular-nums" style={{ color, textShadow: `0 0 25px ${color}50` }}>
-            {score ?? '—'}
+          <span className="text-5xl font-black tabular-nums" style={{ color, fontFamily: 'var(--font-geist-mono), JetBrains Mono, monospace', textShadow: `0 0 25px ${color}50` }}>
+            {score != null ? displayScore : '—'}
           </span>
           <span className="text-[10px] tracking-[0.3em] mt-1 font-mono uppercase" style={{ color, opacity: 0.7 }}>
             {level || 'SCANNING'}

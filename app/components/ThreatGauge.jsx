@@ -20,27 +20,11 @@ export default function ThreatGauge({ score = 0, level = 'low', size = 120 }) {
 
   const bgPath = `M ${arcX(startAngle)} ${arcY(startAngle)} A ${radius} ${radius} 0 1 1 ${arcX(endAngle)} ${arcY(endAngle)}`;
 
-  // Animate on intersection
-  useEffect(() => {
-    if (hasAnimated.current || clamp === 0) return;
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting && !hasAnimated.current) {
-          hasAnimated.current = true;
-          animate();
-          observer.disconnect();
-        }
-      },
-      { threshold: 0.3 }
-    );
-
-    if (gaugeRef.current) observer.observe(gaugeRef.current);
-    return () => observer.disconnect();
-  }, [clamp]);
-
   function animate() {
-    const duration = 1800; // ms
+    if (hasAnimated.current) return;
+    hasAnimated.current = true;
+
+    const duration = 1800;
     const start = performance.now();
 
     function easeOutExpo(t) {
@@ -51,15 +35,47 @@ export default function ThreatGauge({ score = 0, level = 'low', size = 120 }) {
       const elapsed = now - start;
       const t = Math.min(elapsed / duration, 1);
       const eased = easeOutExpo(t);
-
       setDisplayScore(Math.round(eased * clamp));
       setArcProgress(eased * clamp);
-
       if (t < 1) requestAnimationFrame(tick);
     }
 
     requestAnimationFrame(tick);
   }
+
+  useEffect(() => {
+    if (clamp === 0) return;
+
+    // If element is already in viewport, animate immediately
+    if (gaugeRef.current) {
+      const rect = gaugeRef.current.getBoundingClientRect();
+      const inView =
+        rect.top < window.innerHeight &&
+        rect.bottom > 0 &&
+        rect.left < window.innerWidth &&
+        rect.right > 0;
+      if (inView) {
+        // Small delay so the element fully renders before animating
+        const t = setTimeout(animate, 80);
+        return () => clearTimeout(t);
+      }
+    }
+
+    // Otherwise use IntersectionObserver for scroll-in
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          animate();
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    if (gaugeRef.current) observer.observe(gaugeRef.current);
+    return () => observer.disconnect();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clamp]);
 
   // Build the value arc based on animated progress
   const currentSweep = startAngle + (arcProgress / 100) * range;
@@ -70,14 +86,11 @@ export default function ThreatGauge({ score = 0, level = 'low', size = 120 }) {
 
   const color = arcProgress < 33 ? '#22c55e' : arcProgress < 66 ? '#ffcc00' : '#ff2d55';
   const levelColors = { low: '#22c55e', medium: '#ffcc00', high: '#ff2d55', critical: '#ff2d55' };
-
-  // Glow intensity scales with progress
   const glowOpacity = Math.min(0.6, arcProgress / 100);
 
   return (
     <div ref={gaugeRef}>
       <svg width={size} height={size * 0.75} viewBox="0 0 100 80">
-        {/* Glow filter */}
         <defs>
           <filter id="arcGlow" x="-50%" y="-50%" width="200%" height="200%">
             <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
