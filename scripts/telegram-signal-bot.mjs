@@ -168,9 +168,9 @@ function scoreSignal(m) {
 
   // Time sensitivity (0-3)
   const days = m.endDate ? Math.max(0, (new Date(m.endDate).getTime() - Date.now()) / 86400000) : 365;
-  if (days <= 3) { score += 3; reasons.push('Resolves in <3 days'); }
-  else if (days <= 14) { score += 2; reasons.push('Resolves in <2 weeks'); }
-  else if (days <= 60) { score += 1; reasons.push('Resolves in <2 months'); }
+  if (days <= 3) { score += 3; reasons.push('Resolves in &lt;3 days'); }
+  else if (days <= 14) { score += 2; reasons.push('Resolves in &lt;2 weeks'); }
+  else if (days <= 60) { score += 1; reasons.push('Resolves in &lt;2 months'); }
 
   // Narrative value (0-3)
   const geoFin = /\b(president|election|trump|biden|fed|interest rate|war|ceasefire|iran|china|russia|ukraine|tariff|gdp|recession|ipo|crypto|bitcoin|ethereum|ai\b|openai|google|apple|tesla|congress|supreme court|nato|opec)\b/i;

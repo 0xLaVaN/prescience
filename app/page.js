@@ -155,100 +155,106 @@ function LiveMarketCard({ market, index }) {
   );
 }
 
-/* ── PRICING ──────────────────────────────────────────────────────── */
-function Pricing() {
+/* ── ACCESS TIERS ─────────────────────────────────────────────────── */
+function AccessTiers() {
   const [refL, visL] = useScrollReveal(0.2);
   const [refR, visR] = useScrollReveal(0.2);
 
   const cardBase = 'rounded-2xl p-8 transition-all duration-700';
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+      {/* Free tier */}
       <div ref={refL} className={`${cardBase} bg-white/[0.02] border border-white/[0.06] hover:bg-white/[0.04]`}
         style={{ opacity: visL ? 1 : 0, transform: visL ? 'translateX(0)' : 'translateX(-30px)' }}>
         <div className="text-center mb-6">
-          <h3 className="text-xl font-black text-white/70 mb-2 tracking-wider">FREE</h3>
-          <div className="text-4xl font-black text-[#00f0ff] mb-1">$0</div>
-          <div className="text-xs text-white/30 tracking-wider">no signup needed</div>
+          <h3 className="text-xl font-black font-mono text-white/70 mb-2 tracking-wider">FREE</h3>
+          <div className="text-4xl font-black font-mono text-[#00f0ff] mb-1">$0</div>
+          <div className="text-xs text-white/30 tracking-wider font-mono">no signup needed</div>
         </div>
         <ul className="space-y-3 mb-8">
-          {['/api/pulse summary (threat level, market count)', 'No API key required', 'No registration', 'Perfect for monitoring'].map(t => (
+          {[
+            'Telegram community channel',
+            'Signals delayed 1 hour',
+            'Max 1–3 signals per day',
+            'Resolution receipts posted publicly',
+            'Full dashboard access at prescience.markets',
+          ].map(t => (
             <li key={t} className="flex items-center gap-3 text-sm text-white/50">
-              <span className="w-1 h-1 rounded-full bg-[#00f0ff]/50" />{t}
+              <span className="w-1 h-1 rounded-full bg-[#00f0ff]/50 flex-shrink-0" />{t}
             </li>
           ))}
         </ul>
-        <Link href="/about" className="block w-full py-3 text-center bg-white/[0.04] border border-[#00f0ff]/20 text-[#00f0ff] rounded-xl font-bold tracking-wider hover:bg-[#00f0ff]/10 transition-all text-sm">
-          TRY NOW
-        </Link>
+        <a href="https://t.me/PrescienceSignalsBot" target="_blank" rel="noopener noreferrer"
+          className="flex items-center justify-center gap-2 w-full py-3 text-center bg-white/[0.04] border border-[#00f0ff]/20 text-[#00f0ff] rounded-xl font-bold tracking-wider hover:bg-[#00f0ff]/10 transition-all text-sm">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/>
+          </svg>
+          JOIN TELEGRAM
+        </a>
       </div>
 
+      {/* Pro tier */}
       <div ref={refR} className={`${cardBase} bg-gradient-to-br from-[#00f0ff]/[0.06] to-transparent border border-[#00f0ff]/20 relative overflow-hidden`}
         style={{ opacity: visR ? 1 : 0, transform: visR ? 'translateX(0)' : 'translateX(30px)' }}>
-        <div className="absolute -top-2 -right-2 bg-[#00f0ff] text-[#0a0a0f] text-[10px] font-black px-3 py-1 rounded-full rotate-12">x402</div>
+        <div className="absolute -top-2 -right-2 bg-[#00f0ff] text-[#0a0a0f] text-[10px] font-black font-mono px-3 py-1 rounded-full rotate-12">PRO</div>
         <div className="text-center mb-6">
-          <h3 className="text-xl font-black text-white/70 mb-2 tracking-wider">PAY PER CALL</h3>
-          <div className="text-4xl font-black text-[#00f0ff] mb-1">$0.001</div>
-          <div className="text-xs text-white/30 tracking-wider">USDC per request · Base network</div>
+          <h3 className="text-xl font-black font-mono text-white/70 mb-2 tracking-wider">PRO</h3>
+          <div className="text-4xl font-black font-mono text-[#00f0ff] mb-1">$20</div>
+          <div className="text-xs text-white/30 tracking-wider font-mono">per month · ETH or USDC on Base</div>
         </div>
         <ul className="space-y-3 mb-8">
-          {['Full /api/scan, /api/pulse, /api/news', 'No API key — pay with USDC on Base', 'Agent-native via x402 protocol', 'Onchain settlement via Coinbase CDP', 'Works with @x402/fetch'].map(t => (
+          {[
+            'Real-time DM alerts — no delay',
+            'Signals before the free channel sees them',
+            'Priority STRONG_CALL notifications',
+            'Volume spike alerts',
+            'Cancel anytime',
+          ].map(t => (
             <li key={t} className="flex items-center gap-3 text-sm text-white/50">
-              <span className="w-1 h-1 rounded-full bg-[#00f0ff]/50" />{t}
+              <span className="w-1 h-1 rounded-full bg-[#00f0ff]/50 flex-shrink-0" />{t}
             </li>
           ))}
         </ul>
-        <a href="https://x402.org" target="_blank" rel="noopener noreferrer" className="block w-full py-3 text-center bg-[#00f0ff] text-[#0a0a0f] rounded-xl font-black tracking-wider hover:bg-[#00f0ff]/80 transition-all text-sm">
-          LEARN ABOUT x402
+        <a href="https://t.me/PrescienceSignalsBot" target="_blank" rel="noopener noreferrer"
+          className="flex items-center justify-center gap-2 w-full py-3 text-center bg-[#00f0ff] text-[#0a0a0f] rounded-xl font-black tracking-wider hover:bg-[#00f0ff]/80 transition-all text-sm">
+          GET PRO ACCESS
         </a>
       </div>
     </div>
   );
 }
 
-/* ── TRUST SIGNALS ────────────────────────────────────────────────── */
-function TrustSignals({ pulse }) {
+/* ── LIVE STATS ───────────────────────────────────────────────────── */
+function LiveStats({ pulse }) {
+  const marketsScanned = pulse?.markets_scanned;
+  const totalWallets = pulse?.total_wallets;
+  const highestScore = pulse?.highest_score;
+  const threatLevel = pulse?.threat_level;
+
+  if (!pulse) return null;
+
   const metrics = [
-    { label: 'Markets Tracked', value: pulse?.markets_scanned || 500, suffix: '+' },
-    { label: 'Wallets Analyzed', value: pulse?.total_wallets || 25000, suffix: '+' },
-    { label: 'Predictions Made', value: 150, suffix: '' },
-    { label: 'Accuracy Rate', value: 73, suffix: '%' },
+    ...(marketsScanned ? [{ label: 'Markets Scanned', value: marketsScanned, suffix: '' }] : []),
+    ...(totalWallets ? [{ label: 'Wallets Analyzed', value: totalWallets, suffix: '+' }] : []),
+    ...(highestScore != null ? [{ label: 'Highest Threat Score', value: highestScore, suffix: '' }] : []),
   ];
+
+  if (metrics.length === 0) return null;
+
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+    <div className={`grid grid-cols-1 md:grid-cols-${metrics.length} gap-6 max-w-3xl mx-auto`}>
       {metrics.map((m) => (
         <div key={m.label} className="text-center bg-white/[0.02] border border-white/[0.04] rounded-xl p-6 hover:bg-white/[0.04] transition-all duration-300">
-          <div className="text-3xl font-black text-[#00f0ff] mb-2" style={{ textShadow: '0 0 20px rgba(0,240,255,0.2)' }}>
+          <div className="text-3xl font-black font-mono text-[#00f0ff] mb-2" style={{ textShadow: '0 0 20px rgba(0,240,255,0.2)' }}>
             <AnimatedNumber value={m.value} suffix={m.suffix} />
           </div>
-          <div className="text-[10px] text-white/30 tracking-[0.2em] uppercase">{m.label}</div>
+          <div className="text-[10px] text-white/30 tracking-[0.2em] uppercase font-mono">{m.label}</div>
         </div>
       ))}
     </div>
   );
 }
 
-/* ── CODE EXAMPLE ─────────────────────────────────────────────────── */
-function CodeExample() {
-  return (
-    <div className="max-w-2xl mx-auto">
-      <div className="bg-white/[0.02] border border-white/[0.06] rounded-2xl p-6 overflow-x-auto">
-        <div className="text-[10px] text-white/30 tracking-[0.2em] uppercase mb-4">How agents call Prescience</div>
-        <pre className="text-sm text-white/60 font-mono leading-relaxed whitespace-pre">
-{`import { wrapFetch } from "@x402/fetch";
-import { createWalletClient } from "viem";
-
-const x402Fetch = wrapFetch(fetch, walletClient);
-
-const res = await x402Fetch(
-  "https://prescience.markets/api/scan"
-);
-const data = await res.json();
-// → { scan: [...], meta: { markets_scanned: 20 } }`}
-        </pre>
-      </div>
-    </div>
-  );
-}
 
 /* ═══════════════════════════════════════════════════════════════════
    MAIN LANDING PAGE
@@ -316,9 +322,9 @@ export default function PrescienceLanding() {
               className="px-8 py-4 bg-[#00f0ff] text-[#0a0a0f] font-black tracking-wider rounded-xl hover:bg-[#00f0ff]/80 transition-all text-sm">
               ENTER THE WIRE
             </Link>
-            <Link href="/about"
+            <Link href="/scorecard"
               className="px-8 py-4 bg-white/[0.04] border border-white/10 text-white/60 font-bold tracking-wider rounded-xl hover:bg-white/[0.08] hover:text-white/80 transition-all text-sm">
-              VIEW API DOCS
+              VIEW SCORECARD
             </Link>
             <a href="https://t.me/PrescienceSignalsBot" target="_blank" rel="noopener noreferrer"
               className="px-8 py-4 bg-white/[0.04] border border-white/10 text-white/60 font-bold tracking-wider rounded-xl hover:bg-white/[0.08] hover:text-white/80 transition-all text-sm">
@@ -377,32 +383,34 @@ export default function PrescienceLanding() {
 
       <SectionDivider />
 
-      {/* ─── PRICING ──────────────────────────────────────────────── */}
+      {/* ─── ACCESS TIERS ─────────────────────────────────────────── */}
       <Section bg>
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
             <div className="text-[10px] text-[#00f0ff]/30 tracking-[0.4em] font-mono mb-3">ACCESS</div>
-            <h2 className="text-3xl md:text-4xl font-mono font-black tracking-wide text-white/80 mb-4">Pay Per Call</h2>
+            <h2 className="text-3xl md:text-4xl font-mono font-black tracking-wide text-white/80 mb-4">Free + Pro</h2>
             <p className="text-white/30 max-w-xl mx-auto text-sm font-text">
-              No API keys. No subscriptions. Pay $0.001 USDC per call via x402 on Base.
+              Free signals on Telegram — delayed 1 hour. Pro gets them the moment we detect them.
             </p>
           </div>
-          <Pricing />
+          <AccessTiers />
         </div>
       </Section>
 
       <SectionDivider />
 
-      {/* ─── TRUST SIGNALS ────────────────────────────────────────── */}
-      <Section>
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-14">
-            <div className="text-[10px] text-[#00f0ff]/30 tracking-[0.4em] font-mono mb-3">METRICS</div>
-            <h2 className="text-3xl md:text-4xl font-mono font-black tracking-wide text-white/80">Trusted by Smart Money</h2>
+      {/* ─── LIVE STATS ───────────────────────────────────────────── */}
+      {pulse && (
+        <Section>
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-14">
+              <div className="text-[10px] text-[#00f0ff]/30 tracking-[0.4em] font-mono mb-3">LIVE DATA</div>
+              <h2 className="text-3xl md:text-4xl font-mono font-black tracking-wide text-white/80">Scanning Right Now</h2>
+            </div>
+            <LiveStats pulse={pulse} />
           </div>
-          <TrustSignals pulse={pulse} />
-        </div>
-      </Section>
+        </Section>
+      )}
 
       <SectionDivider />
 
