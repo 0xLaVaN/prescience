@@ -1,0 +1,32 @@
+{
+  "stats": {
+    "total_calls": 2,
+    "resolved": 0,
+    "open": 2,
+    "wins": 0,
+    "losses": 0,
+    "win_rate": null,
+    "cumulative_pnl": "0.00"
+  },
+  "calls": [
+    {
+      "slug": "us-strikes-iran-by-march-31-2026-393-221-132-633-215-592-866-184-321-377-931-222-297-655-719-935-944-321-534-925-937-744-476-586-454-914-676-972-362-876-771-213-554-443-439-287-519-563-393-256-817-961-941-762-654-519-837-721-654-479-949-423-962-271-545",
+      "question": "US strikes Iran by March 31, 2026?",
+      "signal_score": 8,
+      "entry_price": 0.575,
+      "flow_direction": "MINORITY_HEAVY",
+      "called_at": "2026-02-22T04:33:14.367Z",
+      "status": "open"
+    },
+    {
+      "slug": "openai-ipo-closing-market-cap-above-1t",
+      "question": "OpenAI IPO closing market cap above $1T?",
+      "signal_score": 8,
+      "entry_price": 0.58,
+      "flow_direction": "MINORITY_HEAVY",
+      "called_at": "2026-02-22T04:33:13.966Z",
+      "status": "open"
+    }
+  ],
+  "updated_at": "2026-02-22T06:05:18.112Z"
+}
