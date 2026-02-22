@@ -1,27 +1,41 @@
 #!/usr/bin/env node
 /**
- * Prescience Telegram Signal Bot V2
- * 
- * Posts high-conviction signals (score >= 6/12) directly to the
- * Prescience community Telegram group via Bot API.
- * 
- * Smart dedup: same market can re-post if signal changed materially
+ * Prescience Telegram Signal Bot V3 — Delayed Queue Edition
+ *
+ * Instead of posting directly to the free Telegram channel, this bot
+ * writes qualifying signals to a 1-hour delay queue.
+ *
+ * Queue file:  /data/workspace-shared/signals/telegram-delay-queue.json
+ * Processor:   telegram-queue-processor.mjs (run every 5min via cron)
+ *
+ * Flow:
+ *   Signal detected → score ≥6 → write to queue (send_at = now + 1hr)
+ *                               → update post-log immediately (dedup)
+ *   Queue processor → posts anything past send_at to free channel
+ *   Future: Pro DM subscribers get instant delivery (before queue)
+ *
+ * Smart dedup: same market can re-queue if signal changed materially
  * (score delta >= 2, price moved >= 10¢, or flow direction flipped).
- * 
+ *
  * Usage: node telegram-signal-bot.mjs [--dry] [--channel=CHAT_ID]
- * 
+ *
  * Env vars (from .env or environment):
  *   PRESCIENCE_BOT_TOKEN — Telegram bot token
- *   PRESCIENCE_COMMUNITY_CHAT_ID — Target chat ID
- * 
+ *   PRESCIENCE_COMMUNITY_CHAT_ID — Target chat ID (used as fallback label)
+ *
  * Reads:
  *   - Prescience scan API for market data
  *   - /data/workspace-shared/signals/telegram-post-log.json for dedup
+ *
+ * Writes:
+ *   - /data/workspace-shared/signals/telegram-delay-queue.json
+ *   - /data/workspace-shared/signals/telegram-post-log.json
  */
 
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -37,24 +51,27 @@ try {
 
 const BOT_TOKEN = process.env.PRESCIENCE_BOT_TOKEN;
 const POST_LOG_PATH = '/data/workspace-shared/signals/telegram-post-log.json';
+const QUEUE_PATH = '/data/workspace-shared/signals/telegram-delay-queue.json';
 const MAX_POSTS_PER_DAY = 3;
 const MIN_SCORE_THRESHOLD = 6;
+const DELAY_MS = 60 * 60 * 1000; // 1 hour delay for free channel
+
 // Use admin API to bypass x402 payment gate
 const sharedConfig = JSON.parse(fs.readFileSync('/data/workspace-shared/config.json', 'utf-8'));
 const SCAN_URL = `${sharedConfig.admin_api.base_url}/scan?limit=50`;
 const ADMIN_TOKEN = sharedConfig.admin_api.bearer_token;
 const DEDUP_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h base dedup window
-const MATERIAL_SCORE_DELTA = 2;   // re-post if score changed by >=2
-const MATERIAL_PRICE_DELTA = 0.10; // re-post if price moved >=10¢
+const MATERIAL_SCORE_DELTA = 2;    // re-queue if score changed by >=2
+const MATERIAL_PRICE_DELTA = 0.10; // re-queue if price moved >=10¢
 const LOG_RETENTION_DAYS = 14;     // keep log for trend tracking
 
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry');
 const channelArg = args.find(a => a.startsWith('--channel='))?.split('=')[1];
+// channelArg is accepted for compatibility — actual posting happens in queue-processor
 const CHAT_ID = channelArg || process.env.PRESCIENCE_COMMUNITY_CHAT_ID;
 
 if (!BOT_TOKEN) { console.error('Missing PRESCIENCE_BOT_TOKEN'); process.exit(1); }
-if (!CHAT_ID) { console.error('Missing PRESCIENCE_COMMUNITY_CHAT_ID'); process.exit(1); }
 
 // --- Post log with smart dedup ---
 
@@ -72,24 +89,41 @@ function isDuplicate(market, scoring, postLog) {
   const slug = market.slug || market.conditionId;
   const prev = postLog.filter(p => p.slug === slug);
   if (prev.length === 0) return false;
-  
+
   const latest = prev.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
   const timeSince = Date.now() - new Date(latest.timestamp).getTime();
-  
-  // Always allow re-post after 24h if it still qualifies
+
+  // Always allow re-queue after 24h if it still qualifies
   if (timeSince > DEDUP_WINDOW_MS) return false;
-  
+
   // Within 24h — check if signal changed materially
   const scoreDelta = Math.abs(scoring.score - (latest.score || 0));
   const priceDelta = Math.abs((market.currentPrices?.Yes ?? 0.5) - (latest.yesPrice ?? 0.5));
   const flowFlipped = latest.flowDirection && market.flow_direction_v2 &&
     latest.flowDirection !== market.flow_direction_v2;
-  
-  if (scoreDelta >= MATERIAL_SCORE_DELTA) return false; // Score jumped — re-post
-  if (priceDelta >= MATERIAL_PRICE_DELTA) return false;  // Price moved — re-post
-  if (flowFlipped) return false;                          // Flow flipped — re-post
-  
+
+  if (scoreDelta >= MATERIAL_SCORE_DELTA) return false; // Score jumped — re-queue
+  if (priceDelta >= MATERIAL_PRICE_DELTA) return false;  // Price moved — re-queue
+  if (flowFlipped) return false;                          // Flow flipped — re-queue
+
   return true; // Nothing changed materially — skip
+}
+
+// --- Queue management ---
+
+function loadQueue() {
+  try { return JSON.parse(fs.readFileSync(QUEUE_PATH, 'utf-8')); } catch { return []; }
+}
+
+function saveQueue(queue) {
+  // Ensure signals dir exists
+  const dir = path.dirname(QUEUE_PATH);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(QUEUE_PATH, JSON.stringify(queue, null, 2));
+}
+
+function isAlreadyQueued(slug, queue) {
+  return queue.some(e => e.slug === slug && e.status === 'pending');
 }
 
 // --- Sports filter ---
@@ -172,24 +206,6 @@ function formatMessage(m, sc) {
   return lines.join('\n');
 }
 
-// --- Telegram Bot API ---
-
-async function sendTelegram(text) {
-  const resp = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: CHAT_ID,
-      text,
-      parse_mode: 'HTML',
-      disable_web_page_preview: true,
-    }),
-  });
-  const data = await resp.json();
-  if (!data.ok) throw new Error(`Telegram API error: ${data.description}`);
-  return data.result;
-}
-
 // --- Main ---
 
 async function main() {
@@ -203,17 +219,18 @@ async function main() {
     const markets = data.scan || data.markets || [];
 
     if (markets.length === 0) {
-      console.log(JSON.stringify({ signals: [], postCount: 0, reason: 'No markets from scan' }));
+      console.log(JSON.stringify({ queued: [], queueCount: 0, reason: 'No markets from scan' }));
       process.exit(0);
     }
 
     let postLog = loadPostLog();
+    let queue = loadQueue();
 
-    // Check daily limit
+    // Check daily limit (count today's queue entries, not posts)
     const todayStart = new Date(); todayStart.setUTCHours(0, 0, 0, 0);
-    const todayPosts = postLog.filter(p => new Date(p.timestamp).getTime() > todayStart.getTime());
-    if (todayPosts.length >= MAX_POSTS_PER_DAY) {
-      console.log(JSON.stringify({ signals: [], postCount: 0, reason: `Already posted ${todayPosts.length}/${MAX_POSTS_PER_DAY} today` }));
+    const todayQueued = postLog.filter(p => new Date(p.timestamp).getTime() > todayStart.getTime());
+    if (todayQueued.length >= MAX_POSTS_PER_DAY) {
+      console.log(JSON.stringify({ queued: [], queueCount: 0, reason: `Already queued ${todayQueued.length}/${MAX_POSTS_PER_DAY} today` }));
       process.exit(0);
     }
 
@@ -222,54 +239,79 @@ async function main() {
       .map(m => ({ market: m, scoring: scoreSignal(m) }))
       .filter(s => s.scoring.score >= MIN_SCORE_THRESHOLD)
       .filter(s => !isDuplicate(s.market, s.scoring, postLog))
+      .filter(s => !isAlreadyQueued(s.market.slug || s.market.conditionId, queue))
       .sort((a, b) => b.scoring.score - a.scoring.score);
 
-    const remaining = MAX_POSTS_PER_DAY - todayPosts.length;
-    const toPost = scored.slice(0, remaining);
+    const remaining = MAX_POSTS_PER_DAY - todayQueued.length;
+    const toQueue = scored.slice(0, remaining);
 
+    const now = Date.now();
+    const sendAt = new Date(now + DELAY_MS).toISOString(); // 1hr from now
     const results = [];
-    for (const s of toPost) {
+
+    for (const s of toQueue) {
+      const slug = s.market.slug || s.market.conditionId;
       const msg = formatMessage(s.market, s.scoring);
-      
+      const entry = {
+        id: crypto.randomUUID(),
+        slug,
+        question: s.market.question,
+        message: msg,
+        score: s.scoring.score,
+        chat_id: CHAT_ID || process.env.PRESCIENCE_COMMUNITY_CHAT_ID,
+        queued_at: new Date(now).toISOString(),
+        send_at: sendAt,
+        status: 'pending',
+        // Metadata for future pro DM use
+        market_meta: {
+          threat_score: s.market.threat_score,
+          yesPrice: s.market.currentPrices?.Yes ?? null,
+          flowDirection: s.market.flow_direction_v2 || null,
+        },
+      };
+
       if (dryRun) {
-        console.log(`[DRY RUN] Would post: ${s.market.question} (score ${s.scoring.score})`);
+        console.log(`[DRY RUN] Would queue: ${s.market.question} (score ${s.scoring.score}) → send_at ${sendAt}`);
       } else {
-        try {
-          await sendTelegram(msg);
-          console.log(`✅ Posted: ${s.market.question} (score ${s.scoring.score})`);
-        } catch (err) {
-          console.error(`❌ Failed to post ${s.market.question}: ${err.message}`);
-          continue;
-        }
+        queue.push(entry);
+        console.log(`📥 Queued: ${s.market.question} (score ${s.scoring.score}) → ${sendAt}`);
       }
 
-      // Log with full context for smart dedup
-      postLog.push({
-        slug: s.market.slug || s.market.conditionId,
-        question: s.market.question,
-        score: s.scoring.score,
-        threat_score: s.market.threat_score,
-        yesPrice: s.market.currentPrices?.Yes ?? null,
-        flowDirection: s.market.flow_direction_v2 || null,
-        timestamp: new Date().toISOString(),
-      });
+      // Update post log immediately — prevents re-detection in next scan cycle
+      if (!dryRun) {
+        postLog.push({
+          slug,
+          question: s.market.question,
+          score: s.scoring.score,
+          threat_score: s.market.threat_score,
+          yesPrice: s.market.currentPrices?.Yes ?? null,
+          flowDirection: s.market.flow_direction_v2 || null,
+          timestamp: new Date(now).toISOString(),
+          queued: true,
+          send_at: sendAt,
+        });
+      }
 
       results.push({
-        slug: s.market.slug || s.market.conditionId,
+        slug,
         question: s.market.question,
         score: s.scoring.score,
+        send_at: sendAt,
       });
     }
 
-    if (!dryRun) savePostLog(postLog);
+    if (!dryRun) {
+      saveQueue(queue);
+      savePostLog(postLog);
+    }
 
     console.log(JSON.stringify({
-      posted: results,
-      postCount: results.length,
-      totalQualifying: scored.length + results.length, // scored already filtered
-      todayTotal: todayPosts.length + results.length,
+      queued: results,
+      queueCount: results.length,
+      totalQualifying: scored.length,
+      todayTotal: todayQueued.length + results.length,
       maxPerDay: MAX_POSTS_PER_DAY,
-      chatId: CHAT_ID,
+      delayMinutes: DELAY_MS / 60000,
       dryRun,
     }, null, 2));
 
