@@ -287,7 +287,7 @@ export default function PrescienceLanding() {
             <div className="text-[10px] text-[#00f0ff]/40 tracking-[0.5em] font-mono mb-6 uppercase">
               Prediction Market Intelligence
             </div>
-            <h1 className="text-5xl md:text-7xl lg:text-8xl font-black tracking-tight text-white/90 mb-8 leading-[0.95]">
+            <h1 className="text-5xl md:text-7xl lg:text-8xl font-mono font-black tracking-tight text-white/90 mb-8 leading-[0.95]">
               See Who{' '}
               <span className="text-[#00f0ff] inline-block" style={{ textShadow: '0 0 40px rgba(0,240,255,0.4)' }}>
                 Sees First
@@ -335,7 +335,7 @@ export default function PrescienceLanding() {
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-14">
             <div className="text-[10px] text-[#00f0ff]/30 tracking-[0.4em] font-mono mb-3">LIVE FEED</div>
-            <h2 className="text-3xl md:text-4xl font-black tracking-wide text-white/80 mb-4">Market Intelligence</h2>
+            <h2 className="text-3xl md:text-4xl font-mono font-black tracking-wide text-white/80 mb-4">Market Intelligence</h2>
             <p className="text-white/30 max-w-xl mx-auto text-sm font-text">Real-time threat scores from our AI surveillance system.</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -366,7 +366,7 @@ export default function PrescienceLanding() {
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
             <div className="text-[10px] text-[#00f0ff]/30 tracking-[0.4em] font-mono mb-3">METHODOLOGY</div>
-            <h2 className="text-3xl md:text-4xl font-black tracking-wide text-white/80 mb-4">How Prescience Works</h2>
+            <h2 className="text-3xl md:text-4xl font-mono font-black tracking-wide text-white/80 mb-4">How Prescience Works</h2>
             <p className="text-white/30 max-w-xl mx-auto text-sm font-text">
               Three-stage intelligence pipeline. Scan. Detect. Alert.
             </p>
@@ -382,7 +382,7 @@ export default function PrescienceLanding() {
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
             <div className="text-[10px] text-[#00f0ff]/30 tracking-[0.4em] font-mono mb-3">ACCESS</div>
-            <h2 className="text-3xl md:text-4xl font-black tracking-wide text-white/80 mb-4">Pay Per Call</h2>
+            <h2 className="text-3xl md:text-4xl font-mono font-black tracking-wide text-white/80 mb-4">Pay Per Call</h2>
             <p className="text-white/30 max-w-xl mx-auto text-sm font-text">
               No API keys. No subscriptions. Pay $0.001 USDC per call via x402 on Base.
             </p>
@@ -398,7 +398,7 @@ export default function PrescienceLanding() {
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-14">
             <div className="text-[10px] text-[#00f0ff]/30 tracking-[0.4em] font-mono mb-3">METRICS</div>
-            <h2 className="text-3xl md:text-4xl font-black tracking-wide text-white/80">Trusted by Smart Money</h2>
+            <h2 className="text-3xl md:text-4xl font-mono font-black tracking-wide text-white/80">Trusted by Smart Money</h2>
           </div>
           <TrustSignals pulse={pulse} />
         </div>
@@ -409,7 +409,7 @@ export default function PrescienceLanding() {
       {/* ─── CTA ──────────────────────────────────────────────────── */}
       <Section>
         <div className="max-w-3xl mx-auto text-center">
-          <h2 className="text-4xl md:text-5xl font-black tracking-wide text-white/90 mb-6 leading-tight">
+          <h2 className="text-4xl md:text-5xl font-mono font-black tracking-wide text-white/90 mb-6 leading-tight">
             Ready to See Who Sees First?
           </h2>
           <p className="text-base text-white/40 mb-10 max-w-xl mx-auto leading-relaxed font-text">
