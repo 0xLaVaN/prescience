@@ -1,11 +1,13 @@
 import './globals.css';
+import { GeistSans } from 'geist/font/sans';
+import { GeistMono } from 'geist/font/mono';
 import Nav from './components/Nav';
 import Ticker from './components/Ticker';
 import Footer from './components/Footer';
 
 export const metadata = {
   title: 'Prescience | Prediction Market Intelligence',
-  description: 'Real-time prediction market intelligence. Insider threat detection, flow analysis, and trader behavior signals.',
+  description: 'See who moves before the news. Prediction market intelligence — whale detection, flow analysis, timestamped calls.',
   icons: {
     icon: '/icon.svg',
   },
@@ -13,13 +15,8 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
-      </head>
-      <body className="min-h-screen bg-[#0a0a0f] antialiased grid-bg scanlines text-white">
+    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
+      <body className="min-h-screen bg-[#0a0a0f] antialiased grid-bg scanlines text-white font-sans">
         <Nav />
         <Ticker />
         <main className="pt-[88px]">{children}</main>

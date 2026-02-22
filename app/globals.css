@@ -20,13 +20,13 @@
 body {
   background: var(--void);
   color: white;
-  font-family: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, sans-serif;
   overflow-x: hidden;
 }
 
 /* Font utility classes */
-.font-mono, .font-data, code, pre { font-family: 'JetBrains Mono', monospace !important; }
-.font-text { font-family: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif !important; }
+.font-mono, .font-data, code, pre { font-family: var(--font-geist-mono), ui-monospace, monospace !important; }
+.font-text { font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, sans-serif !important; }
 
 /* Grid background */
 .grid-bg {
