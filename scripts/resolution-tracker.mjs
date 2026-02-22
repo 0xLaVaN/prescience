@@ -1,17 +1,32 @@
 #!/usr/bin/env node
 /**
  * Prescience Resolution Tracker
- * 
- * Checks if markets we signaled have resolved. Generates proof-of-call
- * receipts and posts them to the Telegram community channel.
- * 
- * Flow:
- *   1. Read telegram-post-log.json (our signals)
- *   2. Check each against Polymarket Gamma API for resolution
- *   3. If resolved: generate receipt, post to Telegram, save to scorecard
- *   4. Skip already-processed resolutions
- * 
- * Usage: node resolution-tracker.mjs [--dry]
+ *
+ * Checks each signal in the telegram-post-log against Polymarket's Gamma API
+ * to detect market resolutions. When a market resolves, generates a
+ * proof-of-call receipt, posts it to the free Telegram channel, and
+ * saves the data for scorecard tracking.
+ *
+ * Usage:
+ *   node resolution-tracker.mjs [--dry]
+ *
+ *   --dry   Print receipts but do NOT post to Telegram or write any files
+ *
+ * Reads:
+ *   - /data/workspace-shared/signals/telegram-post-log.json     (our calls)
+ *   - /data/workspace-shared/signals/resolution-receipts.json   (already processed, to skip)
+ *
+ * Writes:
+ *   - /data/workspace-shared/signals/resolution-receipts.json   (appends new receipts)
+ *   - /data/workspace-shared/signals/scorecard-data.json        (appends scorecard rows)
+ *
+ * Posts:
+ *   - Telegram free channel (-5124728560) via PRESCIENCE_BOT_TOKEN
+ *
+ * API:
+ *   - Gamma API: https://gamma-api.polymarket.com/markets?slug=SLUG
+ *     Checks: market.closed === true || market.resolved === true
+ *     Outcome: outcomePrices[0] >= 0.99 → YES, <= 0.01 → NO
  */
 
 import fs from 'fs';
@@ -20,287 +35,331 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Load .env
+// ── .env loader (same pattern as telegram-signal-bot.mjs) ──────────────────
 const envPath = path.resolve(__dirname, '..', '.env');
 try {
   const envFile = fs.readFileSync(envPath, 'utf-8');
   for (const line of envFile.split('\n')) {
-    const match = line.match(/^([A-Z_]+)=(.+)$/);
+    const match = line.match(/^([A-Z_][A-Z0-9_]*)=(.+)$/);
     if (match && !process.env[match[1]]) process.env[match[1]] = match[2].trim();
   }
-} catch {}
+} catch { /* .env optional */ }
 
-const BOT_TOKEN = process.env.PRESCIENCE_BOT_TOKEN;
-const CHAT_ID = process.env.PRESCIENCE_COMMUNITY_CHAT_ID || '-5124728560';
-const POST_LOG_PATH = '/data/workspace-shared/signals/telegram-post-log.json';
-const RECEIPTS_PATH = '/data/workspace-shared/signals/resolution-receipts.json';
+// ── Config ─────────────────────────────────────────────────────────────────
+const BOT_TOKEN    = process.env.PRESCIENCE_BOT_TOKEN;
+const FREE_CHAT_ID = '-5124728560';
+const GAMMA_BASE   = 'https://gamma-api.polymarket.com/markets';
+
+const POST_LOG_PATH  = '/data/workspace-shared/signals/telegram-post-log.json';
+const RECEIPTS_PATH  = '/data/workspace-shared/signals/resolution-receipts.json';
 const SCORECARD_PATH = '/data/workspace-shared/signals/scorecard-data.json';
 
-const args = process.argv.slice(2);
+const args   = process.argv.slice(2);
 const dryRun = args.includes('--dry');
 
-if (!BOT_TOKEN) { console.error('Missing PRESCIENCE_BOT_TOKEN'); process.exit(1); }
-
-// --- File I/O ---
-
-function loadJson(path) {
-  try { return JSON.parse(fs.readFileSync(path, 'utf-8')); } catch { return []; }
+if (!BOT_TOKEN) {
+  console.error('[resolution-tracker] ERROR: Missing PRESCIENCE_BOT_TOKEN in .env');
+  process.exit(1);
 }
 
-function saveJson(path, data) {
-  const dir = path.split('/').slice(0, -1).join('/');
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path, JSON.stringify(data, null, 2));
-}
+// ── File helpers ────────────────────────────────────────────────────────────
 
-// --- Polymarket Resolution Check ---
-
-async function checkResolution(slug) {
-  // Try Gamma API first
+function readJsonFile(filePath, fallback = []) {
   try {
-    const resp = await fetch(`https://gamma-api.polymarket.com/markets?slug=${encodeURIComponent(slug)}&limit=1`);
-    if (resp.ok) {
-      const markets = await resp.json();
-      const m = Array.isArray(markets) ? markets[0] : markets;
-      if (m) {
-        const resolved = m.resolved === true || m.closed === true || m.active === false;
-        if (resolved) {
-          // Determine outcome
-          const outcomePrices = m.outcomePrices ? JSON.parse(m.outcomePrices) : null;
-          let outcome = null;
-          if (outcomePrices) {
-            const yesPrice = parseFloat(outcomePrices[0]);
-            outcome = yesPrice > 0.9 ? 'YES' : yesPrice < 0.1 ? 'NO' : null;
-          }
-          // Check resolvedOutcome field directly
-          if (!outcome && m.resolvedOutcome) {
-            outcome = m.resolvedOutcome.toUpperCase();
-          }
-          return {
-            resolved: true,
-            outcome,
-            endDate: m.endDate || m.closedTime,
-            question: m.question,
-            finalYesPrice: outcomePrices ? parseFloat(outcomePrices[0]) : null,
-          };
-        }
-        return { resolved: false };
-      }
-    }
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    return JSON.parse(raw);
   } catch (err) {
-    console.error(`Gamma API error for ${slug}: ${err.message}`);
+    if (err.code === 'ENOENT') return fallback;
+    throw new Error(`Failed to read ${filePath}: ${err.message}`);
   }
+}
 
-  // Fallback: try our admin API
+function appendJsonArray(filePath, newEntries) {
+  const existing = readJsonFile(filePath, []);
+  const updated  = [...existing, ...newEntries];
+  const dir = path.dirname(filePath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(updated, null, 2));
+}
+
+// ── Gamma API ───────────────────────────────────────────────────────────────
+
+async function fetchMarketBySlug(slug) {
+  const url = `${GAMMA_BASE}?slug=${encodeURIComponent(slug)}`;
+  const res  = await fetch(url, { headers: { 'Accept': 'application/json' } });
+  if (!res.ok) throw new Error(`Gamma API error ${res.status} for slug: ${slug}`);
+  const data = await res.json();
+  return Array.isArray(data) && data.length > 0 ? data[0] : null;
+}
+
+// ── Resolution detection ────────────────────────────────────────────────────
+
+/**
+ * Returns null if not resolved, or { outcome, finalPrice, resolvedAt } if resolved.
+ *
+ * Resolved iff:
+ *   market.closed === true || market.resolved === true
+ *   AND outcomePrices shows a definitive outcome (>=0.99 or <=0.01)
+ *
+ * outcomePrices[0] = YES price, outcomePrices[1] = NO price
+ */
+function detectResolution(market) {
+  const isResolved = market.resolved === true || market.closed === true;
+  if (!isResolved) return null;
+
+  // Parse outcome prices
+  let prices;
   try {
-    const config = JSON.parse(fs.readFileSync('/data/workspace-shared/config.json', 'utf-8'));
-    const resp = await fetch(`${config.admin_api.base_url}/scan?limit=100`, {
-      headers: { 'Authorization': `Bearer ${config.admin_api.bearer_token}` }
-    });
-    if (resp.ok) {
-      const data = await resp.json();
-      const markets = data.scan || data.markets || [];
-      const m = markets.find(x => (x.slug || x.conditionId) === slug);
-      if (m && (m.resolved || m.closed || m.active === false)) {
-        const yesPrice = m.currentPrices?.Yes;
-        const outcome = yesPrice > 0.9 ? 'YES' : yesPrice < 0.1 ? 'NO' : null;
-        return {
-          resolved: true,
-          outcome,
-          endDate: m.endDate,
-          question: m.question,
-          finalYesPrice: yesPrice,
-        };
-      }
-    }
-  } catch {}
-
-  return { resolved: false };
-}
-
-// --- Receipt Formatting ---
-
-function formatReceipt(signal, resolution) {
-  const signalDate = new Date(signal.timestamp);
-  const now = new Date();
-  const daysBefore = Math.round((now - signalDate) / 86400000);
-  
-  const signalPrice = signal.yesPrice != null ? Math.round(signal.yesPrice * 100) : null;
-  const outcomeEmoji = resolution.outcome === 'YES' ? '✅' : resolution.outcome === 'NO' ? '❌' : '⏳';
-  
-  // Calculate implied P&L
-  let pnlLine = '';
-  if (signalPrice != null && resolution.outcome) {
-    // If outcome is YES and we flagged it: profit = (100 - signalPrice) / signalPrice
-    // If outcome is NO: loss = signalPrice / signalPrice = -100% (you lose your bet)
-    // But we don't make directional calls — we flag activity. 
-    // Show P&L for both sides.
-    if (resolution.outcome === 'YES') {
-      const yesReturn = ((100 - signalPrice) / signalPrice * 100).toFixed(0);
-      pnlLine = `If you bought YES at ${signalPrice}¢: <b>+${yesReturn}%</b>`;
-    } else {
-      const noPrice = 100 - signalPrice;
-      const noReturn = ((100 - noPrice) / noPrice * 100).toFixed(0);
-      pnlLine = `If you bought NO at ${noPrice}¢: <b>+${noReturn}%</b>`;
-    }
+    prices = typeof market.outcomePrices === 'string'
+      ? JSON.parse(market.outcomePrices)
+      : market.outcomePrices;
+  } catch {
+    return null;
   }
 
-  const lines = [
-    `📊 <b>RESOLUTION RECEIPT</b>`,
-    '',
-    `<b>${resolution.question || signal.question}</b>`,
-    '',
-    `${outcomeEmoji} Outcome: <b>${resolution.outcome || 'UNKNOWN'}</b>`,
-    `🎯 Our signal: ${signalDate.toISOString().split('T')[0]} at ${signalPrice != null ? signalPrice + '¢' : 'N/A'}`,
-    `📈 Signal score: ${signal.score}/12`,
-  ];
-  
-  if (pnlLine) lines.push(`💰 ${pnlLine}`);
-  if (daysBefore > 0) lines.push(`⏱️ Called it <b>${daysBefore} day${daysBefore > 1 ? 's' : ''}</b> before resolution.`);
-  
-  lines.push('', `🔗 <a href="https://prescience.markets">Track record → prescience.markets</a>`);
-  lines.push('', '<i>Prescience — See who sees first.</i>');
-  
-  return lines.join('\n');
+  if (!Array.isArray(prices) || prices.length < 2) return null;
+
+  const yesPrice = parseFloat(prices[0]);
+  const noPrice  = parseFloat(prices[1]);
+
+  let outcome;
+  if (yesPrice >= 0.99) {
+    outcome = 'YES';
+  } else if (noPrice >= 0.99) {
+    outcome = 'NO';
+  } else {
+    // Ambiguous — closed but not definitively resolved yet (e.g. in dispute)
+    return null;
+  }
+
+  const finalPrice = outcome === 'YES' ? 1.00 : 0.00;
+
+  // Best proxy for resolution timestamp: updatedAt (changes when resolved)
+  const resolvedAt = market.updatedAt || market.endDate || new Date().toISOString();
+
+  return { outcome, finalPrice, resolvedAt };
 }
 
-// --- Telegram ---
+// ── P&L calculation ─────────────────────────────────────────────────────────
 
-async function sendTelegram(text) {
-  const resp = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: CHAT_ID,
-      text,
-      parse_mode: 'HTML',
-      disable_web_page_preview: true,
-    }),
+/**
+ * Implied P&L if you bought YES at signalPrice and held to resolution.
+ * signalPrice is in [0,1] (e.g. 0.58 = 58¢).
+ * Returns a string like "+72.4%" or "-100.0%"
+ */
+function calcPnL(signalPrice, outcome) {
+  if (signalPrice <= 0) return 'N/A';
+  const entryPriceCents = signalPrice * 100;
+  const exitPriceCents  = outcome === 'YES' ? 100 : 0;
+  const pnlPct = ((exitPriceCents - entryPriceCents) / entryPriceCents) * 100;
+  const sign   = pnlPct >= 0 ? '+' : '';
+  return `${sign}${pnlPct.toFixed(1)}%`;
+}
+
+// ── Days between two ISO timestamps ────────────────────────────────────────
+
+function daysBetween(isoA, isoB) {
+  const msA = new Date(isoA).getTime();
+  const msB = new Date(isoB).getTime();
+  return Math.round(Math.abs(msB - msA) / 86400000);
+}
+
+// ── Format signal date ──────────────────────────────────────────────────────
+
+function formatDate(iso) {
+  const d = new Date(iso);
+  return d.toUTCString().replace(' GMT', ' UTC').replace(/:\d\d UTC$/, ' UTC');
+}
+
+// ── Build Telegram HTML receipt ─────────────────────────────────────────────
+
+function buildReceiptHtml(signal, resolution, market) {
+  const { outcome, resolvedAt }  = resolution;
+  const signalDate  = formatDate(signal.timestamp);
+  const signalCents = Math.round((signal.yesPrice || 0) * 100);
+  const finalCents  = outcome === 'YES' ? 100 : 0;
+  const pnl         = calcPnL(signal.yesPrice || 0, outcome);
+  const daysAhead   = daysBetween(signal.timestamp, resolvedAt);
+  const outcomeEmoji = outcome === 'YES' ? '✅ YES' : '❌ NO';
+  const score        = signal.score || signal.threat_score || '?';
+
+  // Escape HTML entities in the question
+  const question = (signal.question || market.question || 'Unknown Market')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+  return [
+    '📊 <b>RESOLUTION RECEIPT</b>',
+    '',
+    `<b>${question}</b>`,
+    '',
+    `Outcome: ${outcomeEmoji}`,
+    `Our signal: ${signalDate} at ${signalCents}¢`,
+    `Resolution: ${outcome} at ${finalCents}¢`,
+    `Implied P&amp;L: ${pnl}`,
+    `Signal score: ${score}/12`,
+    '',
+    `Called it ${daysAhead} day${daysAhead !== 1 ? 's' : ''} before resolution.`,
+    '',
+    '<i>Prescience — See who sees first.</i>',
+  ].join('\n');
+}
+
+// ── Telegram API ────────────────────────────────────────────────────────────
+
+async function postToTelegram(chatId, html) {
+  const url  = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+  const body = JSON.stringify({
+    chat_id:    chatId,
+    text:       html,
+    parse_mode: 'HTML',
   });
-  const data = await resp.json();
-  if (!data.ok) throw new Error(`Telegram: ${data.description}`);
-  return data.result;
+
+  const res = await fetch(url, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+  });
+
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    throw new Error(`Telegram API error: ${JSON.stringify(data)}`);
+  }
+  return data;
 }
 
-// --- Main ---
+// ── Main ────────────────────────────────────────────────────────────────────
 
 async function main() {
-  const postLog = loadJson(POST_LOG_PATH);
-  const receipts = loadJson(RECEIPTS_PATH);
-  const scorecard = loadJson(SCORECARD_PATH);
-  
+  console.log(`[resolution-tracker] Starting${dryRun ? ' (DRY RUN)' : ''}…`);
+
+  // Load signal post log
+  const postLog = readJsonFile(POST_LOG_PATH, []);
+  if (postLog.length === 0) {
+    console.log('[resolution-tracker] No signals in post log. Nothing to check.');
+    return;
+  }
+  console.log(`[resolution-tracker] Loaded ${postLog.length} signal(s) from post log.`);
+
+  // Load already-processed receipts (to skip)
+  const receipts   = readJsonFile(RECEIPTS_PATH, []);
   const processedSlugs = new Set(receipts.map(r => r.slug));
-  
-  // Only check signals we haven't already processed
-  const toCheck = postLog.filter(s => s.slug && !processedSlugs.has(s.slug));
-  
-  // Deduplicate slugs (same market may appear multiple times in post log)
-  const uniqueSlugs = [...new Set(toCheck.map(s => s.slug))];
-  
-  if (uniqueSlugs.length === 0) {
-    console.log(JSON.stringify({ checked: 0, resolved: 0, reason: 'No unprocessed signals' }));
+  console.log(`[resolution-tracker] ${processedSlugs.size} slug(s) already processed.`);
+
+  const newReceipts  = [];
+  const newScorecard = [];
+
+  for (const signal of postLog) {
+    const { slug, question } = signal;
+    if (!slug) {
+      console.warn(`[resolution-tracker] Skipping signal with no slug: ${question}`);
+      continue;
+    }
+
+    if (processedSlugs.has(slug)) {
+      console.log(`[resolution-tracker] SKIP (already processed): ${slug}`);
+      continue;
+    }
+
+    console.log(`[resolution-tracker] Checking: ${slug}`);
+
+    let market;
+    try {
+      market = await fetchMarketBySlug(slug);
+    } catch (err) {
+      console.error(`[resolution-tracker] API error for ${slug}: ${err.message}`);
+      continue;
+    }
+
+    if (!market) {
+      console.log(`[resolution-tracker] Market not found on Gamma: ${slug}`);
+      continue;
+    }
+
+    const resolution = detectResolution(market);
+
+    if (!resolution) {
+      console.log(`[resolution-tracker] Not yet resolved: ${slug} (closed=${market.closed}, resolved=${market.resolved})`);
+      continue;
+    }
+
+    console.log(`[resolution-tracker] RESOLVED: ${slug} → ${resolution.outcome}`);
+
+    // Build receipt HTML
+    const html = buildReceiptHtml(signal, resolution, market);
+
+    if (dryRun) {
+      console.log('\n── DRY RUN RECEIPT ───────────────────────────────────');
+      console.log(html);
+      console.log('──────────────────────────────────────────────────────\n');
+    } else {
+      // Post to Telegram
+      try {
+        const tgRes = await postToTelegram(FREE_CHAT_ID, html);
+        console.log(`[resolution-tracker] Posted to Telegram: message_id=${tgRes.result?.message_id}`);
+      } catch (err) {
+        console.error(`[resolution-tracker] Telegram post failed for ${slug}: ${err.message}`);
+        // Still save the receipt so we don't loop on failures
+      }
+    }
+
+    // Build receipt record
+    const receiptRecord = {
+      slug,
+      question:       signal.question || market.question,
+      signalTimestamp: signal.timestamp,
+      signalYesPrice:  signal.yesPrice,
+      signalScore:     signal.score || signal.threat_score,
+      outcome:         resolution.outcome,
+      finalPrice:      resolution.finalPrice,
+      resolvedAt:      resolution.resolvedAt,
+      pnl:             calcPnL(signal.yesPrice || 0, resolution.outcome),
+      daysAhead:       daysBetween(signal.timestamp, resolution.resolvedAt),
+      processedAt:     new Date().toISOString(),
+    };
+
+    // Build scorecard record
+    const scorecardRecord = {
+      slug,
+      question:        signal.question || market.question,
+      signalTimestamp: signal.timestamp,
+      signalYesPrice:  signal.yesPrice,
+      signalScore:     signal.score || signal.threat_score,
+      flowDirection:   signal.flowDirection,
+      outcome:         resolution.outcome,
+      correct:         resolution.outcome === 'YES', // we always signal bullish (YES direction)
+      pnl:             calcPnL(signal.yesPrice || 0, resolution.outcome),
+      daysAhead:       daysBetween(signal.timestamp, resolution.resolvedAt),
+      resolvedAt:      resolution.resolvedAt,
+    };
+
+    newReceipts.push(receiptRecord);
+    newScorecard.push(scorecardRecord);
+    processedSlugs.add(slug); // prevent double-processing within same run
+  }
+
+  // Persist results
+  if (newReceipts.length === 0) {
+    console.log('[resolution-tracker] No new resolutions found this run.');
     return;
   }
 
-  console.log(`Checking ${uniqueSlugs.length} unresolved signal(s)...`);
-  
-  const results = { resolved: [], unresolved: [], errors: [] };
-  
-  for (const slug of uniqueSlugs) {
-    // Get the best signal entry for this slug (highest score)
-    const signals = toCheck.filter(s => s.slug === slug);
-    const signal = signals.sort((a, b) => (b.score || 0) - (a.score || 0))[0];
-    
-    try {
-      // Rate limit: small delay between API calls
-      await new Promise(r => setTimeout(r, 500));
-      
-      const resolution = await checkResolution(slug);
-      
-      if (!resolution.resolved) {
-        results.unresolved.push(slug);
-        continue;
-      }
-      
-      if (!resolution.outcome) {
-        // Resolved but can't determine outcome — skip for now
-        console.log(`⚠️ ${slug}: resolved but outcome unclear, skipping`);
-        continue;
-      }
-      
-      const receiptText = formatReceipt(signal, resolution);
-      
-      if (dryRun) {
-        console.log(`[DRY RUN] Would post receipt for: ${signal.question}`);
-        console.log(`  Outcome: ${resolution.outcome}`);
-        console.log(`  Signal price: ${signal.yesPrice ? Math.round(signal.yesPrice * 100) + '¢' : 'N/A'}`);
-      } else {
-        try {
-          await sendTelegram(receiptText);
-          console.log(`✅ Receipt posted: ${signal.question} → ${resolution.outcome}`);
-        } catch (err) {
-          console.error(`❌ Failed to post receipt for ${slug}: ${err.message}`);
-          results.errors.push({ slug, error: err.message });
-          continue;
-        }
-      }
-      
-      // Save receipt
-      const receipt = {
-        slug,
-        question: signal.question,
-        outcome: resolution.outcome,
-        signalDate: signal.timestamp,
-        signalScore: signal.score,
-        signalYesPrice: signal.yesPrice,
-        signalFlowDirection: signal.flowDirection,
-        resolvedAt: new Date().toISOString(),
-        receiptPosted: !dryRun,
-      };
-      
-      receipts.push(receipt);
-      
-      // Save scorecard entry
-      const scorecardEntry = {
-        slug,
-        question: signal.question,
-        outcome: resolution.outcome,
-        signalDate: signal.timestamp,
-        signalScore: signal.score,
-        signalYesPrice: signal.yesPrice,
-        resolvedAt: new Date().toISOString(),
-        // Calculate P&L for scorecard
-        impliedPnlYes: signal.yesPrice != null && resolution.outcome === 'YES'
-          ? ((1 - signal.yesPrice) / signal.yesPrice * 100).toFixed(1) + '%'
-          : null,
-        impliedPnlNo: signal.yesPrice != null && resolution.outcome === 'NO'
-          ? (signal.yesPrice / (1 - signal.yesPrice) * 100).toFixed(1) + '%'
-          : null,
-        hit: null, // We don't make directional calls, so hit/miss is complex
-      };
-      scorecard.push(scorecardEntry);
-      
-      results.resolved.push({ slug, outcome: resolution.outcome });
-      
-    } catch (err) {
-      console.error(`Error checking ${slug}: ${err.message}`);
-      results.errors.push({ slug, error: err.message });
-    }
-  }
-  
   if (!dryRun) {
-    saveJson(RECEIPTS_PATH, receipts);
-    saveJson(SCORECARD_PATH, scorecard);
+    appendJsonArray(RECEIPTS_PATH, newReceipts);
+    console.log(`[resolution-tracker] Saved ${newReceipts.length} receipt(s) → ${RECEIPTS_PATH}`);
+
+    appendJsonArray(SCORECARD_PATH, newScorecard);
+    console.log(`[resolution-tracker] Saved ${newScorecard.length} scorecard row(s) → ${SCORECARD_PATH}`);
+  } else {
+    console.log(`[resolution-tracker] DRY RUN: would save ${newReceipts.length} receipt(s) and ${newScorecard.length} scorecard row(s).`);
   }
-  
-  console.log(JSON.stringify({
-    checked: uniqueSlugs.length,
-    resolved: results.resolved.length,
-    unresolved: results.unresolved.length,
-    errors: results.errors.length,
-    resolvedMarkets: results.resolved,
-    dryRun,
-  }, null, 2));
+
+  console.log('[resolution-tracker] Done.');
 }
 
-main();
+main().catch(err => {
+  console.error('[resolution-tracker] Fatal error:', err);
+  process.exit(1);
+});

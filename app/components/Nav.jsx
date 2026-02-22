@@ -8,6 +8,7 @@ const tabs = [
   { label: 'WIRE', href: '/wire' },
   { label: 'NEWSROOM', href: '/newsroom' },
   { label: 'SCANNER', href: '/scanner' },
+  { label: 'SCORECARD', href: '/scorecard' },
 ];
 
 export default function Nav() {
