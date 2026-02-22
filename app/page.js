@@ -322,7 +322,7 @@ export default function PrescienceLanding() {
             </Link>
             <a href="https://t.me/PrescienceSignalsBot" target="_blank" rel="noopener noreferrer"
               className="px-8 py-4 bg-white/[0.04] border border-white/10 text-white/60 font-bold tracking-wider rounded-xl hover:bg-white/[0.08] hover:text-white/80 transition-all text-sm">
-              📡 JOIN TELEGRAM
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline-block mr-2 -mt-0.5"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg>JOIN TELEGRAM
             </a>
           </div>
         </div>
@@ -418,7 +418,7 @@ export default function PrescienceLanding() {
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
             <a href="https://t.me/PrescienceSignalsBot" target="_blank" rel="noopener noreferrer"
               className="px-8 py-4 bg-[#00f0ff] text-[#0a0a0f] font-black tracking-wider rounded-xl hover:bg-[#00f0ff]/80 transition-all text-sm">
-              📡 JOIN FREE SIGNALS
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline-block mr-2 -mt-0.5"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg>JOIN FREE SIGNALS
             </a>
             <Link href="/wire"
               className="px-8 py-4 bg-white/[0.04] border border-white/10 text-white/60 font-bold tracking-wider rounded-xl hover:bg-white/[0.08] hover:text-white/80 transition-all text-sm">
