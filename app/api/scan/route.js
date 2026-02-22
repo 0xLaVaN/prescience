@@ -10,6 +10,80 @@ const GAMMA_API = 'https://gamma-api.polymarket.com';
 const MARKET_CACHE_TTL = 15 * 60 * 1000;
 const slugCache = new Map();
 
+/**
+ * Detect if a market is currently live (event in progress).
+ * Live events should NOT be scored as signals — price reflects ongoing action.
+ *
+ * Strategy:
+ *  1. Sports/esports keyword match (quick filter)
+ *  2. endDate heuristic: if a game-style market ends within 8h, likely live
+ *  3. Parse description for explicit start times (e.g. "8:00 PM ET")
+ *
+ * Returns: { isLive: bool, reason: string|null }
+ */
+function computeLiveEventFlag(market) {
+  const q = (market.question || '').toLowerCase();
+  const desc = (market.description || '').toLowerCase();
+  const now = Date.now();
+
+  const SPORT_PATTERNS = [
+    /\bvs\.?\s/i, /\bnba\b/i, /\bnfl\b/i, /\bnhl\b/i, /\bmlb\b/i, /\bufc\b/i,
+    /\bcbb\b/i, /\bcfb\b/i, /\bpremier league\b/i, /\bpga\b/i, /\btennis\b/i,
+    /\bf1\b/i, /\bbox(ing)?\b/i, /\bmma\b/i, /\besport/i, /\bcs2\b/i,
+    /\bwins? the\b/i, /\bcovers? the spread\b/i, /\bfinal score\b/i,
+    /\bgold medal\b/i, /\bolympic/i,
+    /celtics|lakers|warriors|knicks|76ers|heat|nuggets|bucks|suns|cavaliers|rockets|mavericks|thunder|nets|pelicans|spurs|bulls|pistons|hornets|raptors|blazers|kings|clippers|jazz|pacers|magic|hawks/i,
+    /chiefs|eagles|ravens|bills|49ers|cowboys|packers|bears|lions|falcons|saints|browns|bengals|broncos|seahawks|rams|chargers|raiders|steelers|texans|colts|titans|jaguars|jets|giants|commanders/i,
+    /bluejays|yankees|red sox|dodgers|mets|braves|cubs|cardinals|nationals|giants|phillies|astros|padres|mariners|orioles|tigers|twins|rays|royals/i,
+    /mongolz|natus vincere|team liquid|cloud9|fnatic|vitality|navi|faze\b/i,
+  ];
+
+  const isSportLike = SPORT_PATTERNS.some(p => p.test(q) || p.test(desc));
+  if (!isSportLike) return { isLive: false, reason: null };
+
+  const endDateMs = market.endDate ? new Date(market.endDate).getTime() : null;
+  if (!endDateMs) return { isLive: false, reason: null };
+
+  const hoursToEnd = (endDateMs - now) / 3600000;
+
+  // Market already resolved
+  if (hoursToEnd < 0) return { isLive: true, reason: 'market_resolved' };
+
+  // Short-duration sports market ending within 8 hours = almost certainly live/starting soon
+  if (hoursToEnd < 8) return { isLive: true, reason: `ends_in_${Math.round(hoursToEnd * 10) / 10}h` };
+
+  // Try to parse explicit start time from description ("8:00 PM ET", "20:00 UTC", "3pm EST")
+  const timePatterns = [
+    /(\d{1,2}):(\d{2})\s*(am|pm)\s*(et|est|edt|ct|cst|cdt|pt|pst|pdt|ut|utc)/i,
+    /(\d{1,2})\s*(am|pm)\s*(et|est|edt|ct|pt|ut|utc)/i,
+    /(\d{2}):(\d{2})\s*(utc|gmt|et|est|edt)/i,
+  ];
+  for (const pat of timePatterns) {
+    const m = (market.question + ' ' + (market.description || '')).match(pat);
+    if (m) {
+      try {
+        // Build a date from today + parsed time
+        let h = parseInt(m[1]), min = parseInt(m[2] || '0');
+        const ampm = (m[3] || '').toLowerCase();
+        const tz = (m[4] || m[3] || '').toLowerCase();
+        if (ampm === 'pm' && h < 12) h += 12;
+        if (ampm === 'am' && h === 12) h = 0;
+        // UTC offset: ET≈+5 (winter), CT≈+6, PT≈+8
+        const utcOffset = /et|est/.test(tz) ? 5 : /ct|cst/.test(tz) ? 6 : /pt|pst/.test(tz) ? 8 : 0;
+        const todayUTC = new Date();
+        todayUTC.setUTCHours(h + utcOffset, min, 0, 0);
+        const eventStartMs = todayUTC.getTime();
+        // If event started in the last 6h and hasn't ended yet
+        if (eventStartMs <= now && now - eventStartMs < 6 * 3600000) {
+          return { isLive: true, reason: `event_started_${Math.round((now - eventStartMs) / 60000)}min_ago` };
+        }
+      } catch { /* time parse failed, skip */ }
+    }
+  }
+
+  return { isLive: false, reason: null };
+}
+
 async function handleScan(request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -374,6 +448,10 @@ async function handleScan(request) {
         if (consensusDampened && excessFreshRatio < 0.10) threatScore = Math.min(threatScore, 5);
         else if (consensusDampened) threatScore = Math.min(threatScore, 10);
 
+        // LIVE EVENT DETECTION — cap threat score at 0 for live games
+        const liveEvent = computeLiveEventFlag(market);
+        if (liveEvent.isLive) threatScore = 0;
+
         const threatLevel = threatScore >= 70 ? 'CRITICAL' : threatScore >= 45 ? 'HIGH' : threatScore >= 25 ? 'MODERATE' : 'LOW';
 
         const entry = {
@@ -424,6 +502,13 @@ async function handleScan(request) {
           entry.is_dampened = true;
           entry.dampening_factor = dampening.factor;
           entry.dampening_reason = dampening.reason;
+        }
+
+        // Live event flag
+        if (liveEvent.isLive) {
+          entry.live_event = true;
+          entry.live_event_reason = liveEvent.reason;
+          entry.live_event_note = 'LIVE — price reflects ongoing event, not predictive flow. Do not signal.';
         }
 
         // Add cross-exchange data if present

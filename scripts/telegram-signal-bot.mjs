@@ -52,6 +52,7 @@ try {
 const BOT_TOKEN = process.env.PRESCIENCE_BOT_TOKEN;
 const POST_LOG_PATH = '/data/workspace-shared/signals/telegram-post-log.json';
 const QUEUE_PATH = '/data/workspace-shared/signals/telegram-delay-queue.json';
+const SCANNER_ALERTS_PATH = '/data/workspace-shared/signals/scanner-alerts.json';
 const MAX_POSTS_PER_DAY = 3;
 const MIN_SCORE_THRESHOLD = 6;
 const DELAY_MS = 60 * 60 * 1000; // 1 hour delay for free channel
@@ -129,29 +130,115 @@ function isAlreadyQueued(slug, queue) {
 // --- Live event detection ---
 // Polymarket endDate = market CLOSE time, NOT event start time.
 // A game can be live while endDate is still hours away.
-// Heuristic: if a sports/short-duration market has endDate within 24h
-// AND the market is <48h old, it's likely a same-day event that may be live.
-// We can't know the exact start time, so we err on the side of caution.
+//
+// Detection strategy:
+//  1. Cross-reference scanner-alerts.json live_games (TARS writes confirmed live events here)
+//  2. Sports/esports keyword match
+//  3. endDate heuristic: ends within 8h = likely live or starting soon
+//  4. Parse explicit start times from question/description
+
+const LIVE_EVENT_SPORT_PATTERNS = [
+  /\bvs\.?\s/i, /\bnba\b/i, /\bnfl\b/i, /\bnhl\b/i, /\bmlb\b/i, /\bufc\b/i,
+  /\bcbb\b/i, /\bcfb\b/i, /\bpremier league\b/i, /\bpga\b/i, /\btennis\b/i,
+  /\bf1\b/i, /\bbox(ing)?\b/i, /\bmma\b/i, /\besport/i, /\bcs2\b/i,
+  /\bwins? the\b/i, /\bfinal score\b/i, /\bgold medal\b/i, /\bolympic/i,
+  /celtics|lakers|warriors|knicks|76ers|heat|nuggets|bucks|cavaliers|rockets|mavericks|thunder|nets/i,
+  /chiefs|eagles|ravens|bills|49ers|cowboys|packers|bears|lions|saints|browns|bengals|broncos|seahawks/i,
+  /mongolz|natus vincere|team liquid|cloud9|fnatic|vitality|navi|faze\b/i,
+];
+
+function loadScannerAlerts() {
+  try { return JSON.parse(fs.readFileSync(SCANNER_ALERTS_PATH, 'utf-8')); } catch { return {}; }
+}
+
+function writeLiveEventToAlerts(market, reason) {
+  try {
+    const alerts = loadScannerAlerts();
+    if (!alerts.live_games) alerts.live_games = [];
+    const slug = market.slug || market.conditionId;
+    const already = alerts.live_games.some(g =>
+      g.market_slug === slug || (g.event && (market.question || '').includes(g.teams || ''))
+    );
+    if (!already) {
+      alerts.live_games.push({
+        event: market.question,
+        market_slug: slug,
+        market_endDate: market.endDate,
+        detected_by: 'telegram-signal-bot',
+        detected_at: new Date().toISOString(),
+        reason,
+        label: `⚡ LIVE — filtered by signal bot (${reason})`,
+      });
+      alerts.last_updated = new Date().toISOString();
+      fs.writeFileSync(SCANNER_ALERTS_PATH, JSON.stringify(alerts, null, 2));
+    }
+  } catch (e) {
+    console.error('Failed to write live event to scanner-alerts:', e.message);
+  }
+}
 
 function isLikelyLiveEvent(m) {
-  const q = (m.question || '').toLowerCase();
-  const isSport = /\bvs\.?\b|win.*on\b|final\b|nba|nhl|nfl|mlb|ufc|premier|epl/i.test(q);
-  if (!isSport) return false;
+  const q = (m.question || '');
+  const now = Date.now();
+
+  // 1. Cross-reference scanner-alerts.json live_games (authoritative — TARS confirmed)
+  try {
+    const alerts = loadScannerAlerts();
+    const slug = m.slug || m.conditionId;
+    const confirmed = (alerts.live_games || []).some(g => {
+      if (g.market_slug && g.market_slug === slug) return true;
+      if (g.teams && q.toLowerCase().includes(g.teams.toLowerCase())) return true;
+      // Check if alert is still relevant (within last 12h)
+      const detectedAt = g.detected_at ? new Date(g.detected_at).getTime() : 0;
+      const alertAge = (now - detectedAt) / 3600000;
+      return alertAge < 12 && g.event && q.includes(g.event?.slice(0, 20));
+    });
+    if (confirmed) return { isLive: true, reason: 'scanner_alerts_confirmed' };
+  } catch { /* non-fatal */ }
+
+  // 2. Sport/esports keyword match
+  const isSportLike = LIVE_EVENT_SPORT_PATTERNS.some(p => p.test(q));
+  if (!isSportLike) return { isLive: false, reason: null };
 
   const endDate = m.endDate ? new Date(m.endDate).getTime() : null;
-  if (!endDate) return false;
+  if (!endDate) return { isLive: false, reason: null };
 
-  const now = Date.now();
   const hoursToEnd = (endDate - now) / 3600000;
 
-  // If market already ended, it's resolved/live
-  if (hoursToEnd < 0) return true;
+  // Already ended
+  if (hoursToEnd < 0) return { isLive: true, reason: 'market_resolved' };
 
-  // If sport market ends within 12h, likely live or about to be
-  // Conservative: we'd rather miss a pre-game signal than post during a live game
-  if (hoursToEnd < 12) return true;
+  // 3. Ends within 8h = game is live or starting very soon
+  if (hoursToEnd < 8) return { isLive: true, reason: `ends_in_${Math.round(hoursToEnd * 10) / 10}h` };
 
-  return false;
+  // 4. Try to parse explicit start time from question/description text
+  const timePatterns = [
+    /(\d{1,2}):(\d{2})\s*(am|pm)\s*(et|est|edt|ct|cst|pt|pst|utc)/i,
+    /(\d{1,2})\s*(am|pm)\s*(et|est|edt|ct|pt|utc)/i,
+    /(\d{2}):(\d{2})\s*(utc|gmt|et|est)/i,
+  ];
+  const fullText = q + ' ' + (m.description || '');
+  for (const pat of timePatterns) {
+    const match = fullText.match(pat);
+    if (match) {
+      try {
+        let h = parseInt(match[1]), min = parseInt(match[2] || '0');
+        const ampm = (match[3] || '').toLowerCase();
+        const tz = (match[4] || match[3] || '').toLowerCase();
+        if (ampm === 'pm' && h < 12) h += 12;
+        if (ampm === 'am' && h === 12) h = 0;
+        const utcOffset = /et|est/.test(tz) ? 5 : /ct|cst/.test(tz) ? 6 : /pt|pst/.test(tz) ? 8 : 0;
+        const todayUTC = new Date();
+        todayUTC.setUTCHours(h + utcOffset, min, 0, 0);
+        const eventStartMs = todayUTC.getTime();
+        if (eventStartMs <= now && now - eventStartMs < 6 * 3600000) {
+          return { isLive: true, reason: `event_started_${Math.round((now - eventStartMs) / 60000)}min_ago` };
+        }
+      } catch { /* skip */ }
+    }
+  }
+
+  return { isLive: false, reason: null };
 }
 
 // --- Sports filter ---
@@ -175,7 +262,12 @@ function scoreSignal(m) {
   const question = m.question || '';
 
   if (isSportsMarket(question)) return { score: 0, reasons: ['Sports — skip'], days: 0 };
-  if (isLikelyLiveEvent(m)) return { score: 0, reasons: ['Live event — price reflects ongoing action, not predictive flow'], days: 0 };
+  const liveCheck = isLikelyLiveEvent(m);
+  if (liveCheck.isLive) {
+    // Write to scanner-alerts.json so TARS can see it
+    writeLiveEventToAlerts(m, liveCheck.reason);
+    return { score: 0, reasons: [`⚡ LIVE EVENT — ${liveCheck.reason || 'ongoing'}. Price reflects live action, not predictive flow.`], days: 0 };
+  }
 
   // Consensus divergence (0-3)
   const yesPrice = m.currentPrices?.Yes ?? 0.5;
