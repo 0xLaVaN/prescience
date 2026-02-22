@@ -174,6 +174,7 @@ async function handleScan(request) {
         let freshWalletCount = 0;
         let buyVolume = 0, sellVolume = 0;
         const outcomeBuyVolume = {};
+        let offHoursTrades = 0, offHoursVolume = 0, offHoursLargeVolume = 0;
 
         for (const t of trades) {
           const w = (t.proxyWallet || '').toLowerCase();
@@ -189,6 +190,18 @@ async function handleScan(request) {
             outcomeBuyVolume[outcome] = (outcomeBuyVolume[outcome] || 0) + size;
           } else {
             sellVolume += size;
+          }
+
+          // Off-hours detection (22:00-06:00 EST = 03:00-11:00 UTC, or weekends)
+          const tradeDate = new Date((t.timestamp || 0) * 1000);
+          const utcHour = tradeDate.getUTCHours();
+          const utcDay = tradeDate.getUTCDay(); // 0=Sun, 6=Sat
+          const isWeekend = utcDay === 0 || utcDay === 6;
+          const isOffHoursUTC = utcHour >= 3 && utcHour < 11; // 22:00-06:00 EST
+          if (isWeekend || isOffHoursUTC) {
+            offHoursTrades++;
+            offHoursVolume += size;
+            if (size >= 5) offHoursLargeVolume += size; // $5+ trades (size is already in USD)
           }
         }
 
@@ -273,7 +286,14 @@ async function handleScan(request) {
         const normVolLiq = volumeVsLiquidityRatio * volLiqWeightMultiplier;
 
         const rawConviction = normFlowV2 * 5 + normLargePositionRatio * 3 + normFreshExcess * 2 + normVolLiq * 1;
-        let threatScore = Math.round((rawConviction / 11) * 100);
+
+        // Off-hours signal amplifier: large trades during off-hours get boosted
+        const offHoursTradesPct = trades.length > 0 ? offHoursTrades / trades.length : 0;
+        const offHoursMultiplier = offHoursLargeVolume >= 5000 ? 1.5 :
+                                    offHoursLargeVolume >= 1000 ? 1.3 :
+                                    offHoursTradesPct > 0.5 ? 1.15 : 1.0;
+
+        let threatScore = Math.round((rawConviction / 11) * 100 * offHoursMultiplier);
 
         // Existing dampening rules
         let consensusDampened = false;
@@ -368,6 +388,10 @@ async function handleScan(request) {
           fresh_excess_capped: freshExcessCapped,
           veteran_minority_flow_score: veteranMinorityFlowScore,
           ...(veteranFlowNote && { veteran_flow_note: veteranFlowNote }),
+          off_hours_trade_pct: Math.round(offHoursTradesPct * 100) / 100,
+          off_hours_volume_usd: Math.round(offHoursVolume * 100) / 100,
+          off_hours_large_volume_usd: Math.round(offHoursLargeVolume * 100) / 100,
+          ...(offHoursMultiplier > 1 && { off_hours_amplified: true, off_hours_multiplier: offHoursMultiplier }),
         };
 
         // Add dampening info
