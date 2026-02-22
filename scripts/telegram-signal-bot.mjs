@@ -126,6 +126,34 @@ function isAlreadyQueued(slug, queue) {
   return queue.some(e => e.slug === slug && e.status === 'pending');
 }
 
+// --- Live event detection ---
+// Polymarket endDate = market CLOSE time, NOT event start time.
+// A game can be live while endDate is still hours away.
+// Heuristic: if a sports/short-duration market has endDate within 24h
+// AND the market is <48h old, it's likely a same-day event that may be live.
+// We can't know the exact start time, so we err on the side of caution.
+
+function isLikelyLiveEvent(m) {
+  const q = (m.question || '').toLowerCase();
+  const isSport = /\bvs\.?\b|win.*on\b|final\b|nba|nhl|nfl|mlb|ufc|premier|epl/i.test(q);
+  if (!isSport) return false;
+
+  const endDate = m.endDate ? new Date(m.endDate).getTime() : null;
+  if (!endDate) return false;
+
+  const now = Date.now();
+  const hoursToEnd = (endDate - now) / 3600000;
+
+  // If market already ended, it's resolved/live
+  if (hoursToEnd < 0) return true;
+
+  // If sport market ends within 12h, likely live or about to be
+  // Conservative: we'd rather miss a pre-game signal than post during a live game
+  if (hoursToEnd < 12) return true;
+
+  return false;
+}
+
 // --- Sports filter ---
 
 function isSportsMarket(q) {
@@ -147,6 +175,7 @@ function scoreSignal(m) {
   const question = m.question || '';
 
   if (isSportsMarket(question)) return { score: 0, reasons: ['Sports — skip'], days: 0 };
+  if (isLikelyLiveEvent(m)) return { score: 0, reasons: ['Live event — price reflects ongoing action, not predictive flow'], days: 0 };
 
   // Consensus divergence (0-3)
   const yesPrice = m.currentPrices?.Yes ?? 0.5;
@@ -322,3 +351,4 @@ async function main() {
 }
 
 main();
+
