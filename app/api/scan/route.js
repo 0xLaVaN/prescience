@@ -308,6 +308,29 @@ async function handleScan(request) {
         let freshExcessCapped = false;
         if (excessFreshRatio <= 0) { threatScore = Math.min(threatScore, 6); freshExcessCapped = true; }
 
+        // NEW MARKET EARLY DETECTION: first 48h + whale activity = price mispricing window
+        let newMarketFlag = false;
+        let newMarketBoost = 0;
+        let marketAgeHours = null;
+        const createdAtRaw = market.createdAt || market.startDate;
+        if (createdAtRaw) {
+          const createdAtMs = new Date(createdAtRaw).getTime();
+          if (!isNaN(createdAtMs)) {
+            marketAgeHours = Math.round((Date.now() - createdAtMs) / 36000) / 100; // hours, 2dp
+            if (marketAgeHours >= 0 && marketAgeHours < 48) {
+              newMarketFlag = true;
+              // Detect whale activity: max single-wallet volume OR total volume thresholds
+              const maxSingleWalletVol = Math.max(0, ...Object.values(wallets).map(w => w.volume));
+              if (!consensusDampened) {
+                if (maxSingleWalletVol > 50000 || totalVolume > 100000) newMarketBoost = 5;
+                else if (maxSingleWalletVol > 20000 || totalVolume > 50000) newMarketBoost = 4;
+                else if (maxSingleWalletVol > 5000 || totalVolume > 10000) newMarketBoost = 3;
+              }
+              threatScore += newMarketBoost;
+            }
+          }
+        }
+
         // Veteran minority flow scoring: detect large counter-consensus flows from established wallets
         let veteranMinorityFlowScore = 0;
         let veteranFlowNote = '';
@@ -388,6 +411,8 @@ async function handleScan(request) {
           fresh_excess_capped: freshExcessCapped,
           veteran_minority_flow_score: veteranMinorityFlowScore,
           ...(veteranFlowNote && { veteran_flow_note: veteranFlowNote }),
+          ...(marketAgeHours !== null && { market_age_hours: marketAgeHours }),
+          ...(newMarketFlag && { new_market_flag: true, new_market_boost: newMarketBoost }),
           off_hours_trade_pct: Math.round(offHoursTradesPct * 100) / 100,
           off_hours_volume_usd: Math.round(offHoursVolume * 100) / 100,
           off_hours_large_volume_usd: Math.round(offHoursLargeVolume * 100) / 100,
