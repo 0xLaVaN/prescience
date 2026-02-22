@@ -67,6 +67,63 @@ function buildThesis({ freshWallets, flowDirectionV2, minorityOutcome, majorityO
   return parts.join(', ') || 'Low signal activity';
 }
 
+
+/**
+ * Favorite-Longshot Bias (FLB) signal computation
+ * Research: longshot markets (<10% YES) lose 60%+ on average — systematically overpriced.
+ * Bond strategy: near-certain markets (>90% YES) = high-yield bonds.
+ * Source: NYT Jan 2026, Whelan 2025, Gargantua research prediction-markets-final.md
+ */
+function computeFLBSignal(market, daysToResolution) {
+  try {
+    const prices = JSON.parse(market.outcomePrices || '[]');
+    const outcomes = JSON.parse(market.outcomes || '[]');
+    if (outcomes.length !== 2 || prices.length !== 2) return null;
+    const yesIdx = outcomes.findIndex(o => o?.toLowerCase() === 'yes');
+    if (yesIdx === -1) return null;
+    const yesPrice = parseFloat(prices[yesIdx]);
+    const noPrice = parseFloat(prices[1 - yesIdx]);
+    if (isNaN(yesPrice) || isNaN(noPrice)) return null;
+
+    // FLB: longshot overpricing (YES < 10%, above noise floor)
+    const FLB_LOSS_RATE = 0.60; // historical: longshots lose ~60% of their implied value
+    if (yesPrice < 0.10 && yesPrice > 0.02) {
+      const flbEdge = Math.round(yesPrice * FLB_LOSS_RATE * 100) / 100; // expected overpricing in cents
+      if (flbEdge > 0.05) { // 5¢ minimum edge
+        return {
+          signal_type: 'FLB',
+          action: 'BUY_NO',
+          flb_edge: flbEdge,
+          historical_loss_rate: FLB_LOSS_RATE,
+          yes_price: Math.round(yesPrice * 1000) / 1000,
+          no_price: Math.round(noPrice * 1000) / 1000,
+          thesis: `Longshot bias: YES at ${Math.round(yesPrice * 100)}¢ — historically ~60% overpriced. FLB NO edge: ${Math.round(flbEdge * 100)}¢`,
+        };
+      }
+    }
+
+    // Bond strategy: near-certain outcome (YES > 90%), collect spread to resolution
+    if (yesPrice > 0.90 && daysToResolution !== null && daysToResolution > 0 && daysToResolution <= 365) {
+      const profit = Math.round((1 - yesPrice) * 1000) / 1000;
+      const roi = profit / yesPrice;
+      const bondYield = Math.round(roi * (365 / daysToResolution) * 10000) / 100; // annualized %
+      if (bondYield >= 5) { // at least 5% annualized
+        return {
+          signal_type: 'BOND',
+          action: 'BOND',
+          yes_price: Math.round(yesPrice * 1000) / 1000,
+          no_price: Math.round(noPrice * 1000) / 1000,
+          profit_per_share: profit,
+          bond_yield_annualized: bondYield,
+          thesis: `Bond: YES at ${Math.round(yesPrice * 100)}¢, ${Math.round(profit * 100)}¢ profit in ${daysToResolution}d = ${bondYield}% annualized`,
+        };
+      }
+    }
+
+    return null;
+  } catch { return null; }
+}
+
 async function handleSignals(request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -375,6 +432,51 @@ async function handleSignals(request) {
       }
     }
 
+
+    // ─── FLB / BOND SWEEP ─────────────────────────────────────────────────────
+    // Separate pass: favorite-longshot bias + bond strategy signals
+    // These are price-based (no trade data required) — catch what flow analysis misses
+    const slugsSeen = new Set(signals.map(s => s.slug));
+    for (const market of allMarkets) {
+      const endDate = market.endDate ? new Date(market.endDate) : null;
+      const daysToResolution = endDate ? Math.round((endDate.getTime() - Date.now()) / 86400000) : null;
+      if (!daysToResolution || daysToResolution <= 0 || daysToResolution > maxDays) continue;
+      const dampening = computeDampening(market);
+      if (dampening.isDampened) continue;
+      const flb = computeFLBSignal(market, daysToResolution);
+      if (!flb) continue;
+      const slug = market.slug || market.conditionId;
+      // Don't duplicate if flow analysis already generated a same-direction signal
+      if (slugsSeen.has(slug)) continue;
+      slugsSeen.add(slug);
+      const timeSensitivity = daysToResolution < 3 ? 'URGENT' : daysToResolution < 14 ? 'MODERATE' : 'LOW';
+      signals.push({
+        market: market.question,
+        slug,
+        exchange: market.exchange || 'polymarket',
+        action: flb.action,
+        signal_type: flb.signal_type,
+        current_price: { yes: flb.yes_price, no: flb.no_price },
+        confidence: 'HIGH',
+        confidence_score: 4,
+        thesis: flb.thesis,
+        signals: { threat_score: 0, flow_direction: 'N/A', flb_based: true },
+        edge: {
+          estimated_fair_value: flb.signal_type === 'FLB'
+            ? Math.round((1 - flb.yes_price * (1 - flb.historical_loss_rate)) * 100) / 100
+            : flb.yes_price,
+          edge: flb.flb_edge || flb.profit_per_share,
+          edge_pct: flb.flb_edge ? Math.round((flb.flb_edge / flb.no_price) * 10000) / 100 : null,
+          minority_outcome: flb.signal_type === 'FLB' ? 'No' : 'Yes',
+        },
+        ...(flb.signal_type === 'FLB' && { flb_edge: flb.flb_edge, historical_loss_rate: flb.historical_loss_rate }),
+        ...(flb.signal_type === 'BOND' && { bond_yield_annualized: flb.bond_yield_annualized }),
+        timing: { resolves: endDate.toISOString().split('T')[0], days_to_resolution: daysToResolution, urgency: timeSensitivity },
+        risk: { false_positive_flags: [], dampened: false, expiry_noise: false },
+        updated_at: new Date().toISOString(),
+      });
+    }
+
     // Sort by edge_pct descending (biggest mispricing first)
     signals.sort((a, b) => Math.abs(b.edge?.edge_pct || 0) - Math.abs(a.edge?.edge_pct || 0));
 
@@ -397,6 +499,8 @@ async function handleSignals(request) {
         total_markets_scanned: allMarkets.length,
         signals_generated: output.length,
         signals_before_filter: signals.length,
+        flb_signals: output.filter(s => s.signal_type === 'FLB').length,
+        bond_signals: output.filter(s => s.signal_type === 'BOND').length,
         scan_timestamp: new Date().toISOString(),
         filters: {
           max_resolution_days: maxDays,
