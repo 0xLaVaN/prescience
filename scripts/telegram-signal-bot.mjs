@@ -1,61 +1,111 @@
 #!/usr/bin/env node
 /**
- * Prescience Telegram Signal Bot V1
+ * Prescience Telegram Signal Bot V2
  * 
- * Posts high-conviction signals (call-quality-gate score >= 6) to the
- * Prescience community Telegram channel.
+ * Posts high-conviction signals (score >= 6/12) directly to the
+ * Prescience community Telegram group via Bot API.
  * 
- * Designed to be called by OpenClaw cron or manually by agents.
- * Outputs JSON with signals — the calling agent posts via message tool.
+ * Smart dedup: same market can re-post if signal changed materially
+ * (score delta >= 2, price moved >= 10¢, or flow direction flipped).
  * 
- * Usage: node telegram-signal-bot.mjs [--dry] [--channel=CHANNEL_ID]
+ * Usage: node telegram-signal-bot.mjs [--dry] [--channel=CHAT_ID]
+ * 
+ * Env vars (from .env or environment):
+ *   PRESCIENCE_BOT_TOKEN — Telegram bot token
+ *   PRESCIENCE_COMMUNITY_CHAT_ID — Target chat ID
  * 
  * Reads:
- *   - Prescience admin API for scan data
- *   - /data/workspace-shared/config.json for channel routing
+ *   - Prescience scan API for market data
  *   - /data/workspace-shared/signals/telegram-post-log.json for dedup
  */
 
 import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-const CONFIG_PATH = '/data/workspace-shared/config.json';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Load .env from prescience root
+const envPath = path.resolve(__dirname, '..', '.env');
+try {
+  const envFile = fs.readFileSync(envPath, 'utf-8');
+  for (const line of envFile.split('\n')) {
+    const match = line.match(/^([A-Z_]+)=(.+)$/);
+    if (match && !process.env[match[1]]) process.env[match[1]] = match[2].trim();
+  }
+} catch {}
+
+const BOT_TOKEN = process.env.PRESCIENCE_BOT_TOKEN;
 const POST_LOG_PATH = '/data/workspace-shared/signals/telegram-post-log.json';
 const MAX_POSTS_PER_DAY = 3;
-const MIN_SCORE_THRESHOLD = 6; // STRONG_CALL
+const MIN_SCORE_THRESHOLD = 6;
+// Use admin API to bypass x402 payment gate
+const sharedConfig = JSON.parse(fs.readFileSync('/data/workspace-shared/config.json', 'utf-8'));
+const SCAN_URL = `${sharedConfig.admin_api.base_url}/scan?limit=50`;
+const ADMIN_TOKEN = sharedConfig.admin_api.bearer_token;
+const DEDUP_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h base dedup window
+const MATERIAL_SCORE_DELTA = 2;   // re-post if score changed by >=2
+const MATERIAL_PRICE_DELTA = 0.10; // re-post if price moved >=10¢
+const LOG_RETENTION_DAYS = 14;     // keep log for trend tracking
 
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry');
 const channelArg = args.find(a => a.startsWith('--channel='))?.split('=')[1];
+const CHAT_ID = channelArg || process.env.PRESCIENCE_COMMUNITY_CHAT_ID;
 
-const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
-const adminBase = config.admin_api.base_url;
-const adminToken = config.admin_api.bearer_token;
-const communityChannel = channelArg || config.telegram?.community_channel || config.telegram?.alerts_channel;
+if (!BOT_TOKEN) { console.error('Missing PRESCIENCE_BOT_TOKEN'); process.exit(1); }
+if (!CHAT_ID) { console.error('Missing PRESCIENCE_COMMUNITY_CHAT_ID'); process.exit(1); }
 
-// Load + clean post log
-let postLog = [];
-try { postLog = JSON.parse(fs.readFileSync(POST_LOG_PATH, 'utf-8')); } catch { postLog = []; }
-const sevenDaysAgo = Date.now() - 7 * 86400000;
-postLog = postLog.filter(p => new Date(p.timestamp).getTime() > sevenDaysAgo);
+// --- Post log with smart dedup ---
 
-// Check daily limit
-const todayStart = new Date(); todayStart.setUTCHours(0, 0, 0, 0);
-const todayPosts = postLog.filter(p => new Date(p.timestamp).getTime() > todayStart.getTime());
-if (todayPosts.length >= MAX_POSTS_PER_DAY) {
-  console.log(JSON.stringify({ signals: [], postCount: 0, reason: `Already posted ${todayPosts.length}/${MAX_POSTS_PER_DAY} today` }));
-  process.exit(0);
+function loadPostLog() {
+  try { return JSON.parse(fs.readFileSync(POST_LOG_PATH, 'utf-8')); } catch { return []; }
 }
 
-// Sports filter
+function savePostLog(log) {
+  const cutoff = Date.now() - LOG_RETENTION_DAYS * 86400000;
+  const cleaned = log.filter(p => new Date(p.timestamp).getTime() > cutoff);
+  fs.writeFileSync(POST_LOG_PATH, JSON.stringify(cleaned, null, 2));
+}
+
+function isDuplicate(market, scoring, postLog) {
+  const slug = market.slug || market.conditionId;
+  const prev = postLog.filter(p => p.slug === slug);
+  if (prev.length === 0) return false;
+  
+  const latest = prev.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+  const timeSince = Date.now() - new Date(latest.timestamp).getTime();
+  
+  // Always allow re-post after 24h if it still qualifies
+  if (timeSince > DEDUP_WINDOW_MS) return false;
+  
+  // Within 24h — check if signal changed materially
+  const scoreDelta = Math.abs(scoring.score - (latest.score || 0));
+  const priceDelta = Math.abs((market.currentPrices?.Yes ?? 0.5) - (latest.yesPrice ?? 0.5));
+  const flowFlipped = latest.flowDirection && market.flow_direction_v2 &&
+    latest.flowDirection !== market.flow_direction_v2;
+  
+  if (scoreDelta >= MATERIAL_SCORE_DELTA) return false; // Score jumped — re-post
+  if (priceDelta >= MATERIAL_PRICE_DELTA) return false;  // Price moved — re-post
+  if (flowFlipped) return false;                          // Flow flipped — re-post
+  
+  return true; // Nothing changed materially — skip
+}
+
+// --- Sports filter ---
+
 function isSportsMarket(q) {
   if (!q) return false;
   const patterns = [
     /\bvs\.?\b/i, /\bnba\b/i, /\bnfl\b/i, /\bnhl\b/i, /\bmlb\b/i, /\bufc\b/i,
-    /\bcbb\b/i, /\bcfb\b/i, /\bpremier league\b/i,
+    /\bcbb\b/i, /\bcfb\b/i, /\bpremier league\b/i, /\bpga\b/i, /\btennis\b/i,
+    /\bf1\b/i, /\bboxing\b/i, /\bmma\b/i,
     /blue devils|wolverines|wildcats|bulldogs|celtics|lakers|warriors|suns|magic|76ers|pelicans|cavaliers|nuggets|bucks|knicks|nets|heat|mavericks|thunder|rockets/i,
   ];
   return patterns.some(p => p.test(q));
 }
+
+// --- Signal scoring (4 dimensions, /12) ---
 
 function scoreSignal(m) {
   let score = 0;
@@ -95,10 +145,12 @@ function scoreSignal(m) {
   else if ((m.total_volume_usd || m.volumeTotal || 0) > 100000) { score += 1; reasons.push('Notable market'); }
 
   if (m.is_dampened || m.consensus_dampened) { score -= 2; reasons.push('Dampened'); }
-  if (dataSignals < 2) score = Math.min(score, 5); // Require real data edge
+  if (dataSignals < 2) score = Math.min(score, 5); // Require real data edge for threshold
 
   return { score: Math.max(0, score), reasons, days: Math.round(days) };
 }
+
+// --- Message formatting ---
 
 function formatMessage(m, sc) {
   const threatEmoji = m.threat_score >= 45 ? '🔴' : m.threat_score >= 25 ? '🟡' : '🟢';
@@ -115,56 +167,114 @@ function formatMessage(m, sc) {
   if (m.veteran_flow_note) lines.push(`🏦 ${m.veteran_flow_note}`);
   if (m.currentPrices?.Yes != null) lines.push(`📈 YES ${(m.currentPrices.Yes * 100).toFixed(0)}¢ | NO ${(m.currentPrices.No * 100).toFixed(0)}¢`);
   if (sc.days < 365) lines.push(`⏳ ${sc.days}d to resolution`);
-  lines.push('', `💡 ${sc.reasons.join(' • ')}`, '', `🔗 prescience.markets/market/${m.slug || m.conditionId}`, '', '<i>Prescience — See who sees first.</i>');
+  if (m.off_hours_amplified) lines.push(`🌙 Off-hours activity detected`);
+  lines.push('', `💡 ${sc.reasons.join(' • ')}`, '', `🔗 <a href="https://prescience.markets/market/${m.slug || m.conditionId}">View on Prescience</a>`, '', '<i>Prescience — See who sees first.</i>');
   return lines.join('\n');
 }
 
+// --- Telegram Bot API ---
+
+async function sendTelegram(text) {
+  const resp = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: CHAT_ID,
+      text,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+    }),
+  });
+  const data = await resp.json();
+  if (!data.ok) throw new Error(`Telegram API error: ${data.description}`);
+  return data.result;
+}
+
+// --- Main ---
+
 async function main() {
   try {
-    const resp = await fetch(`${adminBase}/scan?limit=50`, {
-      headers: { 'Authorization': `Bearer ${adminToken}` }
+    // Fetch scan data (use internal header to bypass x402)
+    const resp = await fetch(SCAN_URL, {
+      headers: { 'Authorization': `Bearer ${ADMIN_TOKEN}` }
     });
-    if (!resp.ok) throw new Error(`Scan API ${resp.status}`);
+    if (!resp.ok) throw new Error(`Scan API ${resp.status}: ${resp.statusText}`);
     const data = await resp.json();
-    const markets = data.scan || [];
+    const markets = data.scan || data.markets || [];
 
+    if (markets.length === 0) {
+      console.log(JSON.stringify({ signals: [], postCount: 0, reason: 'No markets from scan' }));
+      process.exit(0);
+    }
+
+    let postLog = loadPostLog();
+
+    // Check daily limit
+    const todayStart = new Date(); todayStart.setUTCHours(0, 0, 0, 0);
+    const todayPosts = postLog.filter(p => new Date(p.timestamp).getTime() > todayStart.getTime());
+    if (todayPosts.length >= MAX_POSTS_PER_DAY) {
+      console.log(JSON.stringify({ signals: [], postCount: 0, reason: `Already posted ${todayPosts.length}/${MAX_POSTS_PER_DAY} today` }));
+      process.exit(0);
+    }
+
+    // Score, dedup, rank
     const scored = markets
       .map(m => ({ market: m, scoring: scoreSignal(m) }))
       .filter(s => s.scoring.score >= MIN_SCORE_THRESHOLD)
-      .filter(s => !postLog.some(p => p.slug === (s.market.slug || s.market.conditionId)))
+      .filter(s => !isDuplicate(s.market, s.scoring, postLog))
       .sort((a, b) => b.scoring.score - a.scoring.score);
 
     const remaining = MAX_POSTS_PER_DAY - todayPosts.length;
     const toPost = scored.slice(0, remaining);
 
-    const signals = toPost.map(s => ({
-      slug: s.market.slug || s.market.conditionId,
-      question: s.market.question,
-      score: s.scoring.score,
-      threat_score: s.market.threat_score,
-      message: formatMessage(s.market, s.scoring),
-      channel: communityChannel,
-    }));
-
-    if (!dryRun) {
-      for (const sig of signals) {
-        postLog.push({ slug: sig.slug, question: sig.question, score: sig.score, timestamp: new Date().toISOString() });
+    const results = [];
+    for (const s of toPost) {
+      const msg = formatMessage(s.market, s.scoring);
+      
+      if (dryRun) {
+        console.log(`[DRY RUN] Would post: ${s.market.question} (score ${s.scoring.score})`);
+      } else {
+        try {
+          await sendTelegram(msg);
+          console.log(`✅ Posted: ${s.market.question} (score ${s.scoring.score})`);
+        } catch (err) {
+          console.error(`❌ Failed to post ${s.market.question}: ${err.message}`);
+          continue;
+        }
       }
-      fs.writeFileSync(POST_LOG_PATH, JSON.stringify(postLog, null, 2));
+
+      // Log with full context for smart dedup
+      postLog.push({
+        slug: s.market.slug || s.market.conditionId,
+        question: s.market.question,
+        score: s.scoring.score,
+        threat_score: s.market.threat_score,
+        yesPrice: s.market.currentPrices?.Yes ?? null,
+        flowDirection: s.market.flow_direction_v2 || null,
+        timestamp: new Date().toISOString(),
+      });
+
+      results.push({
+        slug: s.market.slug || s.market.conditionId,
+        question: s.market.question,
+        score: s.scoring.score,
+      });
     }
 
+    if (!dryRun) savePostLog(postLog);
+
     console.log(JSON.stringify({
-      signals,
-      postCount: signals.length,
-      totalQualifying: scored.length,
-      skipped: scored.length - signals.length,
-      todayTotal: todayPosts.length + signals.length,
+      posted: results,
+      postCount: results.length,
+      totalQualifying: scored.length + results.length, // scored already filtered
+      todayTotal: todayPosts.length + results.length,
       maxPerDay: MAX_POSTS_PER_DAY,
-      channel: communityChannel,
+      chatId: CHAT_ID,
       dryRun,
     }, null, 2));
+
   } catch (err) {
-    console.error(JSON.stringify({ error: err.message }));
+    console.error(JSON.stringify({ error: err.message, stack: err.stack }));
     process.exit(1);
   }
 }

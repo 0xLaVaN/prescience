@@ -294,7 +294,7 @@ export default function PrescienceLanding() {
               </span>
             </h1>
             <p className="text-lg md:text-xl text-white/40 max-w-2xl mx-auto leading-relaxed font-text">
-              Real-time detection of insider trading and whale movements across 500+ prediction markets.
+              Smart money moves before the news breaks. We detect it. Timestamped calls. Public track record. Free signals on Telegram.
             </p>
           </div>
 
@@ -320,6 +320,10 @@ export default function PrescienceLanding() {
               className="px-8 py-4 bg-white/[0.04] border border-white/10 text-white/60 font-bold tracking-wider rounded-xl hover:bg-white/[0.08] hover:text-white/80 transition-all text-sm">
               VIEW API DOCS
             </Link>
+            <a href="https://t.me/PrescienceSignalsBot" target="_blank" rel="noopener noreferrer"
+              className="px-8 py-4 bg-white/[0.04] border border-white/10 text-white/60 font-bold tracking-wider rounded-xl hover:bg-white/[0.08] hover:text-white/80 transition-all text-sm">
+              📡 JOIN TELEGRAM
+            </a>
           </div>
         </div>
       </section>
@@ -409,11 +413,20 @@ export default function PrescienceLanding() {
             Ready to See Who Sees First?
           </h2>
           <p className="text-base text-white/40 mb-10 max-w-xl mx-auto leading-relaxed font-text">
-            Get early access to Prescience. Detect insider trading and whale movements in real-time.
+            Free signals on Telegram — delayed 1 hour. Pro subscribers get them in real-time.
           </p>
-          <CodeExample />
-          <div className="mt-8 flex items-center justify-center gap-6 text-[10px] text-white/15 tracking-wider">
-            <span>No spam</span><span>·</span><span>Cancel anytime</span><span>·</span><span>Free during beta</span>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
+            <a href="https://t.me/PrescienceSignalsBot" target="_blank" rel="noopener noreferrer"
+              className="px-8 py-4 bg-[#00f0ff] text-[#0a0a0f] font-black tracking-wider rounded-xl hover:bg-[#00f0ff]/80 transition-all text-sm">
+              📡 JOIN FREE SIGNALS
+            </a>
+            <Link href="/wire"
+              className="px-8 py-4 bg-white/[0.04] border border-white/10 text-white/60 font-bold tracking-wider rounded-xl hover:bg-white/[0.08] hover:text-white/80 transition-all text-sm">
+              VIEW THE WIRE
+            </Link>
+          </div>
+          <div className="mt-4 flex items-center justify-center gap-6 text-[10px] text-white/15 tracking-wider">
+            <span>Max 3 signals/day</span><span>·</span><span>No spam</span><span>·</span><span>Pro: $20/mo</span>
           </div>
         </div>
       </Section>
