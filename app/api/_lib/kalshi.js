@@ -31,7 +31,7 @@ export async function getKalshiActiveMarkets(maxMarkets = 300) {
     // Step 1: Get all open events (fast, <1s)
     let allEvents = [];
     let cursor = null;
-    for (let page = 0; page < 5; page++) {
+    for (let page = 0; page < 20; page++) {
       try {
         let url = `${KALSHI_API}/events?status=open&limit=200`;
         if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
@@ -48,9 +48,18 @@ export async function getKalshiActiveMarkets(maxMarkets = 300) {
       }
     }
 
-    // Filter out sports
-    const nonSportsEvents = allEvents.filter(e => e.category !== 'Sports');
-    console.log(`Kalshi: ${allEvents.length} events, ${nonSportsEvents.length} non-sports`);
+    // Log category breakdown
+    const catCounts = {};
+    for (const e of allEvents) {
+      const cat = e.category || 'uncategorized';
+      catCounts[cat] = (catCounts[cat] || 0) + 1;
+    }
+    console.log(`Kalshi: ${allEvents.length} total events. Categories:`, JSON.stringify(catCounts));
+
+    // Filter out sports (both category-level and known sports tickers)
+    const SPORTS_CATEGORIES = ['Sports', 'sports'];
+    const nonSportsEvents = allEvents.filter(e => !SPORTS_CATEGORIES.includes(e.category));
+    console.log(`Kalshi: ${nonSportsEvents.length} non-sports events (filtered ${allEvents.length - nonSportsEvents.length} sports)`);
 
     // Step 2: Fetch markets for ALL non-sports events concurrently (one big Promise.all)
     const allMarkets = [];
@@ -65,12 +74,17 @@ export async function getKalshiActiveMarkets(maxMarkets = 300) {
           .catch(() => [])
       )
     );
+    let tickerFiltered = 0;
     for (const markets of results) {
       for (const m of markets) {
-        if (m.event_ticker?.match(/^KX(MVESPORTS|NBA|NHL|MLB|NFL|SOCCER|EPL|NCAA|UFC|WNBA|MLS)/)) continue;
+        if (m.event_ticker?.match(/^KX(MVESPORTS|NBA|NHL|MLB|NFL|SOCCER|EPL|NCAA|UFC|WNBA|MLS|PGA|TENNIS|F1|BOXING|MMA)/i)) {
+          tickerFiltered++;
+          continue;
+        }
         allMarkets.push(mapKalshiMarket(m));
       }
     }
+    console.log(`Kalshi: ${allMarkets.length} markets after ticker filter (${tickerFiltered} sports tickers removed)`);
 
     // Sort by volume
     allMarkets.sort((a, b) => (parseFloat(b.volume24hr) || 0) - (parseFloat(a.volume24hr) || 0));
