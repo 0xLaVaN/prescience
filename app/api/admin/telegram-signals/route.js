@@ -7,36 +7,68 @@ const MIN_SCORE = 6;
 // In-memory post log (reset on cold start — acceptable for MVP)
 const postLog = [];
 
+// Detect sports/meme markets by question pattern
+function isSportsMarket(question) {
+  if (!question) return false;
+  const q = question.toLowerCase();
+  const sportPatterns = [
+    /\bvs\.?\b/, /\bover\/under\b/, /\bspread\b/, /\bmoneyline\b/,
+    /\bnba\b/, /\bnfl\b/, /\bmlb\b/, /\bnhl\b/, /\bmls\b/, /\bufc\b/, /\bboxing\b/,
+    /\bcbb\b/, /\bcfb\b/, /\bpremier league\b/, /\bla liga\b/, /\bserie a\b/,
+    /blue devils|wolverines|wildcats|bulldogs|crimson|tigers|bears|eagles|hawks|celtics|lakers|warriors|suns|magic|76ers|pelicans|cavaliers|nuggets|bucks|knicks|nets|heat|mavericks|thunder|rockets|spurs|grizzlies|jazz|timberwolves|blazers|pacers|hornets|wizards|pistons|raptors/,
+    /\b(game|match|win|beat|defeat|score|points|goals|touchdowns?|innings?)\b.*\b(tonight|today|tomorrow|this week)\b/,
+  ];
+  return sportPatterns.some(p => p.test(q));
+}
+
 function scoreSignal(m) {
   let score = 0;
   const reasons = [];
+  const question = m.question || '';
 
-  // Consensus divergence (0-3)
+  // Hard skip: sports markets are not signal-worthy for this channel
+  if (isSportsMarket(question)) {
+    return { score: 0, reasons: ['Sports market — skip'], days: 0, isSports: true };
+  }
+
+  // 1. Consensus divergence (0-3)
   const yesPrice = m.currentPrices?.Yes ?? 0.5;
   if (yesPrice >= 0.35 && yesPrice <= 0.65) { score += 3; reasons.push('Near 50/50'); }
   else if ((yesPrice >= 0.15 && yesPrice < 0.35) || (yesPrice > 0.65 && yesPrice <= 0.85)) { score += 2; reasons.push('Meaningful divergence'); }
   else if ((yesPrice >= 0.05 && yesPrice < 0.15) || (yesPrice > 0.85 && yesPrice <= 0.95)) { score += 1; reasons.push('Mild lean'); }
 
-  // Data edge (0-3)
-  const signals = [
+  // 2. Data edge (0-3) — require REAL signal, not just proximity to 50/50
+  const dataSignals = [
     m.flow_direction_v2 === 'MINORITY_HEAVY',
     (m.fresh_wallet_excess || 0) > 0.10,
     (m.large_position_ratio || 0) > 0.05,
     (m.veteran_minority_flow_score || 0) > 0,
+    m.velocity?.velocity_score > 20,
   ].filter(Boolean).length;
-  if (signals >= 3) { score += 3; reasons.push('Multiple converging signals'); }
-  else if (signals >= 2) { score += 2; reasons.push('Clear flow signal'); }
-  else if (signals >= 1) { score += 1; reasons.push('Mild signal'); }
+  if (dataSignals >= 3) { score += 3; reasons.push('Multiple converging signals'); }
+  else if (dataSignals >= 2) { score += 2; reasons.push('Clear flow signal'); }
+  else if (dataSignals >= 1) { score += 1; reasons.push('Mild signal'); }
 
-  // Time sensitivity (0-3)
+  // 3. Time sensitivity (0-3)
   const days = m.endDate ? Math.max(0, (new Date(m.endDate).getTime() - Date.now()) / 86400000) : 365;
   if (days <= 3) { score += 3; reasons.push('<3 days'); }
   else if (days <= 14) { score += 2; reasons.push('<2 weeks'); }
   else if (days <= 60) { score += 1; reasons.push('<2 months'); }
 
+  // 4. Narrative value (0-3) — geopolitical/financial > niche > sports
+  const qLower = question.toLowerCase();
+  const geoFinPatterns = /\b(president|election|trump|biden|fed|interest rate|war|ceasefire|iran|china|russia|ukraine|tariff|gdp|recession|ipo|crypto|bitcoin|ethereum|ai\b|openai|google|apple|tesla|stock|market crash|congress|supreme court|nato|opec)\b/i;
+  if (geoFinPatterns.test(question)) { score += 3; reasons.push('Major event'); }
+  else if (m.total_volume_usd > 500000 || (m.volumeTotal || 0) > 500000) { score += 2; reasons.push('High-volume market'); }
+  else if (m.total_volume_usd > 100000 || (m.volumeTotal || 0) > 100000) { score += 1; reasons.push('Notable market'); }
+
+  // Penalty: dampened markets
   if (m.is_dampened || m.consensus_dampened) { score -= 2; reasons.push('Dampened'); }
 
-  return { score: Math.max(0, score), reasons, days: Math.round(days) };
+  // Hard requirement: data_edge >= 2 for STRONG_CALL
+  if (dataSignals < 2) { score = Math.min(score, 5); }
+
+  return { score: Math.max(0, score), reasons, days: Math.round(days), isSports: false };
 }
 
 async function handler(request) {
