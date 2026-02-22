@@ -53,6 +53,7 @@ const BOT_TOKEN = process.env.PRESCIENCE_BOT_TOKEN;
 const POST_LOG_PATH = '/data/workspace-shared/signals/telegram-post-log.json';
 const QUEUE_PATH = '/data/workspace-shared/signals/telegram-delay-queue.json';
 const SCANNER_ALERTS_PATH = '/data/workspace-shared/signals/scanner-alerts.json';
+const PRO_SUBSCRIBERS_PATH = '/data/workspace-shared/signals/pro-subscribers.json';
 const MAX_POSTS_PER_DAY = 3;
 const MIN_SCORE_THRESHOLD = 6;
 const DELAY_MS = 60 * 60 * 1000; // 1 hour delay for free channel
@@ -254,6 +255,41 @@ function isSportsMarket(q) {
   return patterns.some(p => p.test(q));
 }
 
+// --- Pro subscriber delivery ---
+
+function loadProSubscribers() {
+  try {
+    const subs = JSON.parse(fs.readFileSync(PRO_SUBSCRIBERS_PATH, 'utf-8'));
+    const now = Date.now();
+    return subs.filter(s => s.active && s.expiry_ts > now);
+  } catch { return []; }
+}
+
+async function sendProDMs(message, slug, score) {
+  if (dryRun) { console.log(`[DRY] Would DM Pro subscribers: ${slug} score=${score}`); return 0; }
+  const proSubs = loadProSubscribers();
+  if (proSubs.length === 0) return 0;
+
+  let sent = 0;
+  const proHeader = `⚡ <b>PRO — INSTANT DELIVERY</b>\n\n`;
+  for (const sub of proSubs) {
+    try {
+      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: sub.chat_id, text: proHeader + message, parse_mode: 'HTML' }),
+      });
+      sent++;
+    } catch (e) {
+      console.error(`Pro DM failed for ${sub.chat_id}: ${e.message}`);
+    }
+    // Small delay between DMs to avoid Telegram rate limits
+    await new Promise(r => setTimeout(r, 200));
+  }
+  console.log(`📨 Pro DMs sent: ${sent}/${proSubs.length}`);
+  return sent;
+}
+
 // --- Signal scoring (4 dimensions, /12) ---
 
 function scoreSignal(m) {
@@ -373,6 +409,10 @@ async function main() {
     for (const s of toQueue) {
       const slug = s.market.slug || s.market.conditionId;
       const msg = formatMessage(s.market, s.scoring);
+
+      // ── Pro DM delivery — instant, bypasses 1hr free-channel delay ──
+      await sendProDMs(msg, slug, s.scoring.score);
+
       const entry = {
         id: crypto.randomUUID(),
         slug,
