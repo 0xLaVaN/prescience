@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-02-23T21:07:51.516Z",
+  "generated_at": "2026-02-23T21:16:44.648Z",
   "sync_source": "sync-mission-control.mjs",
   "crons": [
     {
@@ -56,9 +56,9 @@
       "schedule": "every 3h",
       "agentId": "builder",
       "status": "ok",
-      "lastRunAt": "2026-02-23T18:02:45.014Z",
-      "lastDurationMs": 340209,
-      "nextRunAt": "2026-02-23T21:00:00.000Z",
+      "lastRunAt": "2026-02-23T21:02:14.228Z",
+      "lastDurationMs": 447880,
+      "nextRunAt": "2026-02-24T00:00:00.000Z",
       "consecutiveErrors": 0,
       "lastError": null
     },
@@ -212,9 +212,9 @@
       "schedule": "*/30 * * * *",
       "agentId": "main",
       "status": "ok",
-      "lastRunAt": "2026-02-23T20:30:00.050Z",
-      "lastDurationMs": 4445,
-      "nextRunAt": "2026-02-23T21:00:00.000Z",
+      "lastRunAt": "2026-02-23T21:09:42.108Z",
+      "lastDurationMs": 28405,
+      "nextRunAt": "2026-02-23T21:30:00.000Z",
       "consecutiveErrors": 0,
       "lastError": null
     },
@@ -260,9 +260,9 @@
       "schedule": "every 1h",
       "agentId": "scanner",
       "status": "ok",
-      "lastRunAt": "2026-02-23T20:00:00.065Z",
-      "lastDurationMs": 195811,
-      "nextRunAt": "2026-02-23T21:00:00.000Z",
+      "lastRunAt": "2026-02-23T21:00:00.036Z",
+      "lastDurationMs": 134192,
+      "nextRunAt": "2026-02-23T22:00:00.000Z",
       "consecutiveErrors": 0,
       "lastError": null
     },
