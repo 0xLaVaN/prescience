@@ -143,8 +143,12 @@ const LIVE_EVENT_SPORT_PATTERNS = [
   /\bcbb\b/i, /\bcfb\b/i, /\bpremier league\b/i, /\bpga\b/i, /\btennis\b/i,
   /\bf1\b/i, /\bbox(ing)?\b/i, /\bmma\b/i, /\besport/i, /\bcs2\b/i,
   /\bwins? the\b/i, /\bfinal score\b/i, /\bgold medal\b/i, /\bolympic/i,
+  // Kalshi-style betting market keywords (always sports)
+  /\bspread\b/i, /\bmoneyline\b/i, /\btotal points\b/i, /\bover\/under\b/i,
   /celtics|lakers|warriors|knicks|76ers|heat|nuggets|bucks|cavaliers|rockets|mavericks|thunder|nets/i,
   /chiefs|eagles|ravens|bills|49ers|cowboys|packers|bears|lions|saints|browns|bengals|broncos|seahawks/i,
+  // Extended NBA teams (Kalshi spread markets use full team names)
+  /\bhawks\b|\bgrizzlies\b|\bclippers\b|\bspurs\b|\bpistons\b|\bmagic\b|\bpelicans\b|\btimberwolves\b|\bjazz\b|\bsuns\b|\bhornets\b|\bbulls\b|\braptors\b|\bpacers\b|\btrail blazers\b/i,
   /mongolz|natus vincere|team liquid|cloud9|fnatic|vitality|navi|faze\b/i,
 ];
 
@@ -197,8 +201,11 @@ function isLikelyLiveEvent(m) {
     if (confirmed) return { isLive: true, reason: 'scanner_alerts_confirmed' };
   } catch { /* non-fatal */ }
 
-  // 2. Sport/esports keyword match
-  const isSportLike = LIVE_EVENT_SPORT_PATTERNS.some(p => p.test(q));
+  // 2. Sport/esports keyword match — test question AND slug (Kalshi slugs like
+  //    "nba-bkn-atl-2026-02-22-spread-home-9pt5" encode sport info the question omits)
+  const marketSlug = m.slug || m.conditionId || '';
+  const testStr = q + ' ' + marketSlug.replace(/-/g, ' ');
+  const isSportLike = LIVE_EVENT_SPORT_PATTERNS.some(p => p.test(testStr));
   if (!isSportLike) return { isLive: false, reason: null };
 
   const endDate = m.endDate ? new Date(m.endDate).getTime() : null;
@@ -244,15 +251,21 @@ function isLikelyLiveEvent(m) {
 
 // --- Sports filter ---
 
-function isSportsMarket(q) {
-  if (!q) return false;
+function isSportsMarket(q, slug) {
+  if (!q && !slug) return false;
+  // Test question + slug (slug often encodes sport info, e.g. "nba-bkn-atl-2026-02-22-spread")
+  const testStr = (q || '') + ' ' + ((slug || '').replace(/-/g, ' '));
   const patterns = [
     /\bvs\.?\b/i, /\bnba\b/i, /\bnfl\b/i, /\bnhl\b/i, /\bmlb\b/i, /\bufc\b/i,
     /\bcbb\b/i, /\bcfb\b/i, /\bpremier league\b/i, /\bpga\b/i, /\btennis\b/i,
     /\bf1\b/i, /\bboxing\b/i, /\bmma\b/i,
+    // Kalshi betting market types (always sports)
+    /\bspread\b/i, /\bmoneyline\b/i, /\btotal points\b/i,
     /blue devils|wolverines|wildcats|bulldogs|celtics|lakers|warriors|suns|magic|76ers|pelicans|cavaliers|nuggets|bucks|knicks|nets|heat|mavericks|thunder|rockets/i,
+    // Extended NBA/sports team names
+    /\bhawks\b|\bgrizzlies\b|\bclippers\b|\bspurs\b|\bpistons\b|\bhornets\b|\braptors\b|\bpacers\b|\bblazers\b|\bkings\b|\bjazz\b|\btimberwolves\b/i,
   ];
-  return patterns.some(p => p.test(q));
+  return patterns.some(p => p.test(testStr));
 }
 
 // --- Pro subscriber delivery ---
@@ -297,7 +310,10 @@ function scoreSignal(m) {
   const reasons = [];
   const question = m.question || '';
 
-  if (isSportsMarket(question)) return { score: 0, reasons: ['Sports — skip'], days: 0 };
+  const slug = m.slug || m.conditionId || '';
+  if (isSportsMarket(question, slug)) return { score: 0, reasons: ['Sports — skip'], days: 0 };
+  // Also honour live_event flag set by the scan API (belt-and-suspenders)
+  if (m.live_event === true) return { score: 0, reasons: ['⚡ LIVE EVENT (scan flagged) — price reflects ongoing action'], days: 0 };
   const liveCheck = isLikelyLiveEvent(m);
   if (liveCheck.isLive) {
     // Write to scanner-alerts.json so TARS can see it
