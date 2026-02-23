@@ -1,0 +1,66 @@
+{
+  "generated_at": "2026-02-23T03:08:33.624Z",
+  "sync_source": "sync-mission-control.mjs",
+  "crons": [
+    {
+      "id": "17a53784",
+      "name": "builder-heartbeat",
+      "schedule": "0 */3 * * *",
+      "agentId": "builder",
+      "status": "unknown",
+      "lastRunAt": null,
+      "nextRunAt": "2026-02-24T00:00:00.000Z",
+      "lastDurationMs": null,
+      "consecutiveErrors": 0
+    },
+    {
+      "id": "prescience-signals",
+      "name": "prescience-telegram-signals",
+      "schedule": "0 * * * *",
+      "agentId": "builder",
+      "status": "unknown",
+      "lastRunAt": null,
+      "nextRunAt": "2026-02-23T04:00:00.000Z",
+      "lastDurationMs": null,
+      "consecutiveErrors": 0
+    },
+    {
+      "id": "prescience-queue",
+      "name": "prescience-queue-processor",
+      "schedule": "*/30 * * * *",
+      "agentId": "builder",
+      "status": "unknown",
+      "lastRunAt": null,
+      "nextRunAt": "2026-02-23T03:30:00.000Z",
+      "lastDurationMs": null,
+      "consecutiveErrors": 0
+    },
+    {
+      "id": "prescience-resolution",
+      "name": "prescience-resolution-tracker",
+      "schedule": "15 */6 * * *",
+      "agentId": "builder",
+      "status": "unknown",
+      "lastRunAt": null,
+      "nextRunAt": "2026-02-24T00:15:00.000Z",
+      "lastDurationMs": null,
+      "consecutiveErrors": 0
+    },
+    {
+      "id": "payment-bot",
+      "name": "telegram-payment-bot",
+      "schedule": "*/5 * * * *",
+      "agentId": "builder",
+      "status": "unknown",
+      "lastRunAt": null,
+      "nextRunAt": "2026-02-23T03:10:00.000Z",
+      "lastDurationMs": null,
+      "consecutiveErrors": 0
+    }
+  ],
+  "signals": {
+    "total_queued": 3,
+    "total_posted": 5,
+    "pro_subscribers": 0
+  }
+}

@@ -9,6 +9,7 @@ const tabs = [
   { label: 'NEWSROOM', href: '/newsroom' },
   { label: 'SCANNER', href: '/scanner' },
   { label: 'SCORECARD', href: '/scorecard' },
+  { label: 'CMD', href: '/mission-control', admin: true },
 ];
 
 export default function Nav() {
@@ -36,10 +37,15 @@ export default function Nav() {
               key={tab.href}
               href={tab.href}
               className={`relative px-4 py-4 text-[10px] tracking-[0.2em] font-mono transition-colors ${
-                active ? 'text-[#00f0ff]' : 'text-white/40 hover:text-white/60'
+                active
+                  ? 'text-[#00f0ff]'
+                  : tab.admin
+                  ? 'text-white/20 hover:text-white/35'
+                  : 'text-white/40 hover:text-white/60'
               }`}
+              title={tab.admin ? 'Mission Control (admin)' : undefined}
             >
-              {tab.label}
+              {tab.admin ? `⌘ ${tab.label}` : tab.label}
               {active && (
                 <span
                   className="absolute bottom-0 left-2 right-2 h-[2px] bg-[#00f0ff]"
