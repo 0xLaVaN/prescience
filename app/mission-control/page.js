@@ -60,7 +60,7 @@ function Badge({ status }) {
 /* ── Cron Row ────────────────────────────────────────────────────────── */
 function CronRow({ job, idx }) {
   const [expanded, setExpanded] = useState(false);
-  const s = STATUS[job.lastStatus] || STATUS.unknown;
+  const s = STATUS[job.status] || STATUS.unknown;
 
   return (
     <div className="row-in" style={{ animationDelay:`${idx*40}ms`,
@@ -89,7 +89,7 @@ function CronRow({ job, idx }) {
         </div>
 
         {/* Status */}
-        <div><Badge status={job.lastStatus} /></div>
+        <div><Badge status={job.status} /></div>
 
         {/* Duration */}
         <div style={{ fontFamily:'monospace', fontSize:11, color:'rgba(255,255,255,.4)', textAlign:'right' }}>
@@ -169,8 +169,8 @@ export default function MissionControlPage() {
   }, []);
 
   const crons     = data?.crons || [];
-  const healthy   = crons.filter(c => c.lastStatus === 'ok').length;
-  const errored   = crons.filter(c => c.lastStatus === 'error').length;
+  const healthy   = crons.filter(c => c.status === 'ok').length;
+  const errored   = crons.filter(c => c.status === 'error').length;
   const signals   = data?.signals || {};
   const genAt     = data?.generated_at ? new Date(data.generated_at) : null;
   const dataAge   = genAt ? Math.round((Date.now() - genAt.getTime()) / 60000) : null;
@@ -265,9 +265,9 @@ export default function MissionControlPage() {
               crons
                 .sort((a,b) => {
                   // Errors first, then by name
-                  if (a.lastStatus === 'error' && b.lastStatus !== 'error') return -1;
-                  if (b.lastStatus === 'error' && a.lastStatus !== 'error') return  1;
-                  return a.name.localeCompare(b.name);
+                  if (a.status === 'error' && b.status !== 'error') return -1;
+                  if (b.status === 'error' && a.status !== 'error') return  1;
+                  return (a.name||'').localeCompare(b.name||'');
                 })
                 .map((job, i) => <CronRow key={job.id || job.name} job={job} idx={i} />)
             )}

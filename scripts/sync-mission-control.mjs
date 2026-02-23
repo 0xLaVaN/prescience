@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
  * sync-mission-control.mjs
- * Generates /public/data/mission-control.json from local signal files.
- * Run before each Vercel deploy OR on a cron (via gateway agentTurn).
+ * Generates /public/data/mission-control.json from gateway cron data + signal files.
+ * Run before each Vercel deploy OR via gateway cron every 15min.
  *
- * Data sources (all local — no gateway API required):
- *   - Pro subscribers count:   pro-subscribers.json
+ * Data sources:
+ *   - Cron jobs + run history: /data/.openclaw/cron/jobs.json + runs/*.jsonl
+ *   - Pro subscribers count:   pro-subscribers.json  (signals dir)
  *   - Signal queue count:      telegram-delay-queue.json
  *   - Posts count:             telegram-post-log.json
- *   - Cron status:             log files in /data/workspace-shared/signals/
  */
 
 import fs   from 'fs';
@@ -18,105 +18,115 @@ import { execSync } from 'child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SIGNALS   = '/data/workspace-shared/signals';
+const CRON_JOBS = '/data/.openclaw/cron/jobs.json';
+const CRON_RUNS = '/data/.openclaw/cron/runs';
 const OUT_PATH  = path.resolve(__dirname, '..', 'public', 'data', 'mission-control.json');
 
 function loadJSON(p, fallback = null) {
   try { return JSON.parse(fs.readFileSync(p, 'utf-8')); } catch { return fallback; }
 }
 
-function tailLog(logFile, lines = 10) {
+/**
+ * Read the last run record for a job from its .jsonl file.
+ * Returns { status, lastRunAt, lastDurationMs, nextRunAt, consecutiveErrors, lastError }
+ */
+function getLastRun(jobId) {
   try {
-    return fs.readFileSync(logFile, 'utf-8').split('\n').filter(Boolean).slice(-lines).join('\n');
-  } catch { return ''; }
+    const runsFile = path.join(CRON_RUNS, `${jobId}.jsonl`);
+    if (!fs.existsSync(runsFile)) return { status: 'unknown', lastRunAt: null, lastDurationMs: null, nextRunAt: null, consecutiveErrors: 0, lastError: null };
+
+    const lines = fs.readFileSync(runsFile, 'utf-8')
+      .trim().split('\n')
+      .filter(Boolean)
+      .map(l => { try { return JSON.parse(l); } catch { return null; } })
+      .filter(Boolean);
+
+    if (!lines.length) return { status: 'unknown', lastRunAt: null, lastDurationMs: null, nextRunAt: null, consecutiveErrors: 0, lastError: null };
+
+    // Find the last "finished" entry
+    const finished = lines.filter(l => l.action === 'finished');
+    const last = finished.length ? finished[finished.length - 1] : lines[lines.length - 1];
+
+    // Count consecutive errors from end
+    let consecutiveErrors = 0;
+    for (let i = finished.length - 1; i >= 0; i--) {
+      if (finished[i].status === 'error') consecutiveErrors++;
+      else break;
+    }
+
+    return {
+      status:          last.status || 'unknown',
+      lastRunAt:       last.runAtMs   ? new Date(last.runAtMs).toISOString()   : null,
+      lastDurationMs:  last.durationMs || null,
+      nextRunAt:       last.nextRunAtMs ? new Date(last.nextRunAtMs).toISOString() : null,
+      consecutiveErrors,
+      lastError:       last.status === 'error' ? (last.summary || 'Unknown error') : null,
+    };
+  } catch (e) {
+    return { status: 'unknown', lastRunAt: null, lastDurationMs: null, nextRunAt: null, consecutiveErrors: 0, lastError: null };
+  }
 }
 
-function parseLogStatus(logTail) {
-  if (!logTail) return { status: 'unknown', lastRunAt: null };
-  const lower = logTail.toLowerCase();
-  const hasError = /error|failed|exception|✗/i.test(lower);
-  const tsMatch = logTail.match(/\d{4}-\d{2}-\d{2}T[\d:.Z-]+/);
+/**
+ * Format a cron schedule for display.
+ */
+function fmtSchedule(job) {
+  if (!job.schedule) return '?';
+  const s = job.schedule;
+  if (s.kind === 'every') {
+    const ms = s.everyMs;
+    if (ms < 60000) return `every ${ms/1000}s`;
+    if (ms < 3600000) return `every ${ms/60000}m`;
+    if (ms < 86400000) return `every ${ms/3600000}h`;
+    return `every ${ms/86400000}d`;
+  }
+  if (s.kind === 'cron') return s.expr;
+  if (s.kind === 'at')   return `at ${s.at}`;
+  return JSON.stringify(s);
+}
+
+// ── Read gateway cron jobs ────────────────────────────────────────────
+const cronData = loadJSON(CRON_JOBS, { jobs: [] });
+const allJobs  = cronData.jobs || [];
+
+// Include enabled jobs only (skip disabled ones)
+const activeJobs = allJobs.filter(j => j.enabled !== false);
+
+const crons = activeJobs.map(job => {
+  const run = getLastRun(job.id);
   return {
-    status:    hasError ? 'error' : 'ok',
-    lastRunAt: tsMatch ? tsMatch[0] : null,
+    id:               job.id,
+    name:             job.name,
+    schedule:         fmtSchedule(job),
+    agentId:          job.agentId,
+    status:           run.status,
+    lastRunAt:        run.lastRunAt,
+    lastDurationMs:   run.lastDurationMs,
+    nextRunAt:        run.nextRunAt,
+    consecutiveErrors: run.consecutiveErrors,
+    lastError:        run.lastError,
   };
-}
+});
 
-// Read signal files
+// Sort: errors first, then by name
+crons.sort((a, b) => {
+  if (a.status === 'error' && b.status !== 'error') return -1;
+  if (b.status === 'error' && a.status !== 'error') return  1;
+  return a.name.localeCompare(b.name);
+});
+
+// ── Read signal pipeline data ─────────────────────────────────────────
 const postLog    = loadJSON(`${SIGNALS}/telegram-post-log.json`, []);
 const delayQueue = loadJSON(`${SIGNALS}/telegram-delay-queue.json`, []);
 const proSubs    = loadJSON(`${SIGNALS}/pro-subscribers.json`, []);
 
-const activePro  = proSubs.filter(s => s.active && s.expiry_ts > Date.now()).length;
-const queuedSigs = delayQueue.filter(s => !s.sent).length;
-const postedSigs = postLog.length;
+const activePro  = Array.isArray(proSubs) ? proSubs.filter(s => s.active && s.expiry_ts > Date.now()).length : 0;
+const queuedSigs = Array.isArray(delayQueue) ? delayQueue.filter(s => !s.sent).length : 0;
+const postedSigs = Array.isArray(postLog) ? postLog.length : 0;
 
-// Parse log files for cron status
-const signalBotLog     = tailLog(`${SIGNALS}/signal-bot.log`);
-const queueProcLog     = tailLog(`${SIGNALS}/queue-processor.log`);
-const resTrackerLog    = tailLog(`${SIGNALS}/resolution-tracker.log`);
-const paymentBotLog    = tailLog(`${SIGNALS}/payment-bot.log`);
-
-const signalBotStatus  = parseLogStatus(signalBotLog);
-const queueProcStatus  = parseLogStatus(queueProcLog);
-const resTrackerStatus = parseLogStatus(resTrackerLog);
-const paymentBotStatus = parseLogStatus(paymentBotLog);
-
-// Build cron list (known schedules hardcoded, status from logs)
-const now = new Date();
-
-function nextRun(cronExpr) {
-  // Minimal next-run estimation for common patterns
-  const [min, hr, dom, mon, dow] = cronExpr.split(' ');
-  try {
-    const d = new Date();
-    if (min === '*/5')  { d.setMinutes(Math.ceil(d.getMinutes()/5)*5,0,0); }
-    else if (min === '*/30') { d.setMinutes(Math.ceil(d.getMinutes()/30)*30,0,0); }
-    else if (hr === '*') { d.setMinutes(parseInt(min)||0,0,0); d.setHours(d.getHours()+1); }
-    else { d.setMinutes(parseInt(min)||0,0,0); d.setHours(parseInt(hr)||0); if (d < now) d.setDate(d.getDate()+1); }
-    return d.toISOString();
-  } catch { return null; }
-}
-
-const crons = [
-  {
-    id: '17a53784', name: 'builder-heartbeat',
-    schedule: '0 */3 * * *', agentId: 'builder',
-    ...signalBotStatus,
-    nextRunAt: nextRun('0 */3 * * *'),
-    lastDurationMs: null, consecutiveErrors: 0,
-  },
-  {
-    id: 'prescience-signals', name: 'prescience-telegram-signals',
-    schedule: '0 * * * *', agentId: 'builder',
-    ...signalBotStatus,
-    nextRunAt: nextRun('0 * * * *'),
-    lastDurationMs: null, consecutiveErrors: signalBotStatus.status === 'error' ? 1 : 0,
-  },
-  {
-    id: 'prescience-queue', name: 'prescience-queue-processor',
-    schedule: '*/30 * * * *', agentId: 'builder',
-    ...queueProcStatus,
-    nextRunAt: nextRun('*/30 * * * *'),
-    lastDurationMs: null, consecutiveErrors: queueProcStatus.status === 'error' ? 1 : 0,
-  },
-  {
-    id: 'prescience-resolution', name: 'prescience-resolution-tracker',
-    schedule: '15 */6 * * *', agentId: 'builder',
-    ...resTrackerStatus,
-    nextRunAt: nextRun('15 */6 * * *'),
-    lastDurationMs: null, consecutiveErrors: resTrackerStatus.status === 'error' ? 1 : 0,
-  },
-  {
-    id: 'payment-bot', name: 'telegram-payment-bot',
-    schedule: '*/5 * * * *', agentId: 'builder',
-    ...paymentBotStatus,
-    nextRunAt: nextRun('*/5 * * * *'),
-    lastDurationMs: null, consecutiveErrors: paymentBotStatus.status === 'error' ? 1 : 0,
-  },
-];
-
+// ── Build snapshot ────────────────────────────────────────────────────
 const snapshot = {
-  generated_at: now.toISOString(),
+  generated_at: new Date().toISOString(),
   sync_source:  'sync-mission-control.mjs',
   crons,
   signals: {
@@ -130,9 +140,10 @@ const snapshot = {
 fs.mkdirSync(path.dirname(OUT_PATH), { recursive: true });
 fs.writeFileSync(OUT_PATH, JSON.stringify(snapshot, null, 2));
 console.log(`[sync-mission-control] Written to ${OUT_PATH}`);
-console.log(`  Crons: ${crons.length}, Pro subs: ${activePro}, Posted: ${postedSigs}, Queued: ${queuedSigs}`);
+console.log(`  Crons: ${crons.length} active (${crons.filter(c=>c.status==='ok').length} ok, ${crons.filter(c=>c.status==='error').length} error, ${crons.filter(c=>c.status==='unknown').length} unknown)`);
+console.log(`  Pro subs: ${activePro}, Posted: ${postedSigs}, Queued: ${queuedSigs}`);
 
-// Optional: git add + commit the updated file
+// Optional: git commit
 if (process.argv.includes('--commit')) {
   try {
     execSync(`cd ${path.resolve(__dirname, '..')} && git add public/data/mission-control.json && git diff --cached --quiet || git commit -m "chore: sync mission control snapshot [skip ci]"`, { stdio:'inherit' });
@@ -140,6 +151,7 @@ if (process.argv.includes('--commit')) {
   } catch { console.log('  Nothing to commit.'); }
 }
 
+// Optional: Vercel deploy
 if (process.argv.includes('--deploy')) {
   try {
     const creds = JSON.parse(fs.readFileSync('/data/.openclaw/credentials.json', 'utf-8'));
