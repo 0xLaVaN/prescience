@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-02-23T03:08:33.624Z",
+  "generated_at": "2026-02-23T03:23:45.464Z",
   "sync_source": "sync-mission-control.mjs",
   "crons": [
     {
@@ -53,7 +53,7 @@
       "agentId": "builder",
       "status": "unknown",
       "lastRunAt": null,
-      "nextRunAt": "2026-02-23T03:10:00.000Z",
+      "nextRunAt": "2026-02-23T03:25:00.000Z",
       "lastDurationMs": null,
       "consecutiveErrors": 0
     }
