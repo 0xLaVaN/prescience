@@ -325,7 +325,8 @@ function scoreSignal(m) {
 
   // Time sensitivity (0-3)
   const days = m.endDate ? Math.max(0, (new Date(m.endDate).getTime() - Date.now()) / 86400000) : 365;
-  if (days <= 3) { score += 3; reasons.push('Resolves in &lt;3 days'); }
+  if (days === 0) { score += 3; reasons.push('Resolves today'); }
+  else if (days <= 3) { score += 3; reasons.push(`Resolves in ${days}d`); }
   else if (days <= 14) { score += 2; reasons.push('Resolves in &lt;2 weeks'); }
   else if (days <= 60) { score += 1; reasons.push('Resolves in &lt;2 months'); }
 
@@ -343,21 +344,40 @@ function scoreSignal(m) {
 
 // --- Message formatting ---
 
+function escHtml(str) {
+  if (!str) return str;
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 function formatMessage(m, sc) {
   const threatEmoji = m.threat_score >= 45 ? '🔴' : m.threat_score >= 25 ? '🟡' : '🟢';
   const lines = [
     `🎯 <b>PRESCIENCE SIGNAL</b> — Score ${sc.score}/12`,
     '',
-    `<b>${m.question}</b>`,
+    `<b>${escHtml(m.question)}</b>`,
     '',
-    `${threatEmoji} Threat: ${m.threat_score}/100 (${m.threat_level})`,
+    `${threatEmoji} Threat: ${m.threat_score}/100 (${escHtml(m.threat_level)})`,
     `💰 Volume: $${((m.volumeTotal || m.total_volume_usd || 0) / 1000).toFixed(0)}K`,
     `👛 Wallets: ${m.total_wallets || 0} (${m.fresh_wallets || 0} fresh)`,
   ];
-  if (m.flow_direction_v2) lines.push(`📡 Flow: ${m.flow_direction_v2} — $${Math.round((m.minority_side_flow_usd || 0) / 1000)}K ${m.minority_outcome || 'minority'}`);
-  if (m.veteran_flow_note) lines.push(`🏦 ${m.veteran_flow_note}`);
+  if (m.flow_direction_v2) lines.push(`📡 Flow: ${escHtml(m.flow_direction_v2)} — $${Math.round((m.minority_side_flow_usd || 0) / 1000)}K ${escHtml(m.minority_outcome || 'minority')}`);
+  if (m.veteran_flow_note) lines.push(`🏦 ${escHtml(m.veteran_flow_note)}`);
   if (m.currentPrices?.Yes != null) lines.push(`📈 YES ${(m.currentPrices.Yes * 100).toFixed(0)}¢ | NO ${(m.currentPrices.No * 100).toFixed(0)}¢`);
-  if (sc.days < 365) lines.push(`⏳ ${sc.days}d to resolution`);
+  if (sc.days < 365) {
+    if (sc.days === 0) {
+      // Calculate hours from endDate
+      const hoursLeft = m.endDate ? Math.max(0, Math.round((new Date(m.endDate) - Date.now()) / 3600000)) : 0;
+      if (hoursLeft > 0) lines.push(`⏳ ${hoursLeft}h to resolution`);
+      else lines.push(`⏳ Resolving soon`);
+    } else if (sc.days === 1) {
+      lines.push(`⏳ ~1 day to resolution`);
+    } else {
+      lines.push(`⏳ ${sc.days}d to resolution`);
+    }
+  }
   if (m.off_hours_amplified) lines.push(`🌙 Off-hours activity detected`);
   lines.push('', `💡 ${sc.reasons.join(' • ')}`, '', `🔗 <a href="https://prescience.markets/market/${m.slug || m.conditionId}">View on Prescience</a>`, '', '<i>Prescience — See who sees first.</i>');
   return lines.join('\n');
