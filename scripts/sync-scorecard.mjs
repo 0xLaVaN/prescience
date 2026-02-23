@@ -18,27 +18,61 @@ const postLog = load(POST_LOG);
 const receipts = load(RECEIPTS);
 const resolvedSlugs = new Set(receipts.map(r => r.slug));
 
-const openCalls = postLog.filter(p => !resolvedSlugs.has(p.slug)).map(p => ({
-  slug: p.slug, question: p.question, signal_score: p.score || p.threat_score,
-  entry_price: p.yesPrice, flow_direction: p.flowDirection, called_at: p.timestamp, status: 'open',
+// Deduplicate post log by slug — keep latest signal per slug (bot sometimes re-signals same market)
+const latestBySlug = {};
+for (const p of postLog) {
+  if (!p.slug) continue;
+  if (!latestBySlug[p.slug] || new Date(p.timestamp) > new Date(latestBySlug[p.slug].timestamp)) {
+    latestBySlug[p.slug] = p;
+  }
+}
+const deduplicatedLog = Object.values(latestBySlug);
+
+const openCalls = deduplicatedLog.filter(p => !resolvedSlugs.has(p.slug)).map(p => ({
+  slug: p.slug,
+  question: p.question,
+  signal_score: p.score || p.threat_score,
+  entry_price: p.yesPrice,
+  flow_direction: p.flowDirection,
+  called_at: p.timestamp,
+  status: 'open',
 }));
 
 const resolvedCalls = receipts.map(r => ({
-  slug: r.slug, question: r.question || r.market, signal_score: r.signal_score,
-  entry_price: r.entry_price, outcome: r.outcome, pnl: r.pnl,
-  called_at: r.called_at, resolved_at: r.resolved_at, status: 'resolved', correct: r.correct,
+  slug: r.slug,
+  question: r.question || r.market,
+  // resolution-tracker writes signalScore / signalYesPrice / signalTimestamp
+  signal_score: r.signal_score || r.signalScore,
+  entry_price: r.entry_price || r.signalYesPrice,
+  outcome: r.outcome,
+  pnl: r.pnl,
+  called_at: r.called_at || r.signalTimestamp,
+  resolved_at: r.resolved_at || r.resolvedAt,
+  status: 'resolved',
+  correct: r.correct,
 }));
 
 const allCalls = [...resolvedCalls, ...openCalls].sort((a, b) => new Date(b.called_at) - new Date(a.called_at));
 const resolved = resolvedCalls.filter(c => c.outcome);
 const wins = resolved.filter(c => c.correct === true).length;
 
+// Parse pnl strings like "+72.4%" or "-100.0%" into numbers for sum
+function parsePnl(pnlStr) {
+  if (!pnlStr || pnlStr === 'N/A') return 0;
+  return parseFloat(String(pnlStr).replace('%','').replace('+','')) || 0;
+}
+
 const data = {
   stats: {
-    total_calls: allCalls.length, resolved: resolved.length, open: openCalls.length,
-    wins, losses: resolved.length - wins,
+    total_calls: allCalls.length,
+    resolved: resolved.length,
+    open: openCalls.length,
+    wins,
+    losses: resolved.length - wins,
     win_rate: resolved.length > 0 ? (wins / resolved.length * 100).toFixed(1) : null,
-    cumulative_pnl: resolved.reduce((s, r) => s + (r.pnl || 0), 0).toFixed(2),
+    cumulative_pnl: resolved.length > 0
+      ? (resolved.reduce((s, r) => s + parsePnl(r.pnl), 0) / resolved.length).toFixed(1) + '%'
+      : null,
   },
   calls: allCalls,
   updated_at: new Date().toISOString(),
