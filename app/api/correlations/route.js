@@ -19,6 +19,7 @@ import { requirePayment } from '../_lib/auth.js';
 import { runCorrelationAnalysis } from '../_lib/correlation.js';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 export const maxDuration = 55;
 
 async function handleCorrelations(request) {
@@ -29,7 +30,7 @@ async function handleCorrelations(request) {
     const limit       = Math.min(150, Math.max(10, parseInt(searchParams.get('limit'))        || 80));
     const minStrength = (searchParams.get('min_strength') || '').toUpperCase();
 
-    // Fetch top markets by volume (cached, no extra cost)
+    // Fetch top markets by volume (cached, reuses existing polymarket cache)
     let markets = [];
     try {
       const [top, broad] = await Promise.allSettled([
@@ -50,7 +51,7 @@ async function handleCorrelations(request) {
         }
       }
 
-      // Sort by 24h volume desc so correlation focuses on liquid markets
+      // Sort by 24h volume desc so correlation focuses on most liquid markets
       markets.sort((a, b) => (parseFloat(b.volume24hr) || 0) - (parseFloat(a.volume24hr) || 0));
       markets = markets.slice(0, limit);
     } catch (err) {
@@ -62,7 +63,7 @@ async function handleCorrelations(request) {
       return NextResponse.json({ clusters: [], meta: { error: 'No markets available' } });
     }
 
-    // Run correlation analysis (handles caching internally)
+    // Run correlation analysis (handles caching internally, 15min TTL)
     const { clusters, meta } = await runCorrelationAnalysis(markets, {
       windowHours,
       minSharedWallets: minWallets,
@@ -93,8 +94,4 @@ async function handleCorrelations(request) {
   }
 }
 
-export async function GET(request) {
-  const authResult = await requirePayment(request, { price: '$0.001', endpoint: '/api/correlations' });
-  if (authResult) return authResult; // Payment required or unauthorized
-  return handleCorrelations(request);
-}
+export const GET = requirePayment(handleCorrelations);
