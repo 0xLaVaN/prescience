@@ -5,6 +5,7 @@ import { computeDampening, applyDampening } from '../_lib/dampening';
 import { computeWhaleIntelligence } from '../_lib/analysis.js';
 import { computeVelocity } from '../_lib/velocity.js';
 import { requirePayment } from '../_lib/auth.js';
+import { computeContextScoring } from '../_lib/context-scoring.js';
 
 const GAMMA_API = 'https://gamma-api.polymarket.com';
 const MARKET_CACHE_TTL = 15 * 60 * 1000;
@@ -350,10 +351,21 @@ async function handleScan(request) {
         const normLargePositionRatio = Math.min(largePositionRatio, 1);
 
         // Dampening: flow_direction_v2 based
-        const effectiveFwExcess = excessFreshRatio * (
+        const flowDampenedExcess = excessFreshRatio * (
           flowDirectionV2 === 'MAJORITY_ALIGNED' ? 0.2 :
           flowDirectionV2 === 'MIXED' ? 0.6 : 1.0
         );
+
+        // Context-aware scoring: category classification + category-specific multipliers
+        const contextScoring = computeContextScoring(market, {
+          freshWalletExcess: excessFreshRatio,
+          flowDirectionV2,
+          currentPrices,
+          threatScore: 0, // not yet computed — passed for reference only
+          consensusDampened: false, // pre-dampening stage
+        });
+        // Apply context fw_excess multiplier ON TOP of flow-direction dampening
+        const effectiveFwExcess = flowDampenedExcess * contextScoring.fw_excess_multiplier;
         const normFreshExcess = Math.min(effectiveFwExcess / 0.4, 1);
 
         const volLiqWeightMultiplier = flowDirectionV2 === 'MAJORITY_ALIGNED' ? 0.5 : 1.0;
@@ -448,6 +460,14 @@ async function handleScan(request) {
         if (consensusDampened && excessFreshRatio < 0.10) threatScore = Math.min(threatScore, 5);
         else if (consensusDampened) threatScore = Math.min(threatScore, 10);
 
+        // Context-aware scoring: apply category dampening + extreme longshot cap
+        if (contextScoring.context_dampening < 1.0) {
+          threatScore = Math.round(threatScore * contextScoring.context_dampening);
+        }
+        if (contextScoring.threat_score_cap !== null) {
+          threatScore = Math.min(threatScore, contextScoring.threat_score_cap);
+        }
+
         // LIVE EVENT DETECTION — cap threat score at 0 for live games
         const liveEvent = computeLiveEventFlag(market);
         if (liveEvent.isLive) threatScore = 0;
@@ -495,6 +515,10 @@ async function handleScan(request) {
           off_hours_volume_usd: Math.round(offHoursVolume * 100) / 100,
           off_hours_large_volume_usd: Math.round(offHoursLargeVolume * 100) / 100,
           ...(offHoursMultiplier > 1 && { off_hours_amplified: true, off_hours_multiplier: offHoursMultiplier }),
+          market_category: contextScoring.market_category,
+          ...(contextScoring.context_note && { context_note: contextScoring.context_note }),
+          ...(contextScoring.fw_excess_multiplier < 1 && { context_fw_multiplier: contextScoring.fw_excess_multiplier }),
+          ...(contextScoring.context_dampening < 1 && { context_dampening: contextScoring.context_dampening }),
         };
 
         // Add dampening info
