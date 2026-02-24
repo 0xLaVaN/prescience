@@ -2,10 +2,16 @@
 /**
  * Syncs signal data from workspace-shared into public/data/scorecard.json
  * Run before deploy to ensure scorecard page has fresh data on Vercel.
+ *
+ * Usage:
+ *   node sync-scorecard.mjs              # just write the JSON
+ *   node sync-scorecard.mjs --commit     # write + git commit
+ *   node sync-scorecard.mjs --commit --deploy  # write + commit + vercel deploy
  */
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const POST_LOG = '/data/workspace-shared/signals/telegram-post-log.json';
@@ -81,3 +87,27 @@ const data = {
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(OUT, JSON.stringify(data, null, 2));
 console.log(`Synced ${allCalls.length} calls (${resolved.length} resolved, ${openCalls.length} open) → ${OUT}`);
+
+// Optional: git commit
+if (process.argv.includes('--commit')) {
+  try {
+    execSync(
+      `cd ${path.resolve(__dirname, '..')} && git add public/data/scorecard.json && git diff --cached --quiet || git commit -m "chore: sync scorecard snapshot [skip ci]"`,
+      { stdio: 'inherit' }
+    );
+    console.log('  Committed.');
+  } catch { console.log('  Nothing to commit.'); }
+}
+
+// Optional: Vercel deploy
+if (process.argv.includes('--deploy')) {
+  try {
+    const creds = JSON.parse(fs.readFileSync('/data/.openclaw/credentials.json', 'utf-8'));
+    const tok = creds.vercel_token;
+    execSync(
+      `cd ${path.resolve(__dirname, '..')} && npx vercel --prod --yes --token=${tok}`,
+      { stdio: 'inherit' }
+    );
+    console.log('  Deployed to Vercel.');
+  } catch (e) { console.error('  Deploy failed:', e.message); }
+}
