@@ -1,14 +1,23 @@
 {
   "stats": {
-    "total_calls": 5,
+    "total_calls": 6,
     "resolved": 0,
-    "open": 5,
+    "open": 6,
     "wins": 0,
     "losses": 0,
     "win_rate": null,
     "cumulative_pnl": null
   },
   "calls": [
+    {
+      "slug": "khamenei-out-as-supreme-leader-of-iran-by-march-31",
+      "question": "Khamenei out as Supreme Leader of Iran by March 31?",
+      "signal_score": 8,
+      "entry_price": 0.205,
+      "flow_direction": "MINORITY_HEAVY",
+      "called_at": "2026-02-24T00:06:29.493Z",
+      "status": "open"
+    },
     {
       "slug": "us-strikes-iran-by-march-15-2026-176-537-334-314-311-563-139-841-296-929-674-361-128-125-587-277-713-864-314-272",
       "question": "US strikes Iran by March 15, 2026?",
@@ -55,5 +64,5 @@
       "status": "open"
     }
   ],
-  "updated_at": "2026-02-24T00:04:22.800Z"
+  "updated_at": "2026-02-24T03:01:49.403Z"
 }
