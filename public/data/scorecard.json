@@ -10,6 +10,15 @@
   },
   "calls": [
     {
+      "slug": "us-strikes-iran-by-march-31-2026-393-221-132-633-215-592-866-184-321-377-931-222-297-655-719-935-944-321-534-925-937-744-476-586-454-914-676-972-362-876-771-213-554-443-439-287-519-563-393-256-817-961-941-762-654-519-837-721-654-479-949-423-962-271-545",
+      "question": "US strikes Iran by March 31, 2026?",
+      "signal_score": 9,
+      "entry_price": 0.625,
+      "flow_direction": "MINORITY_HEAVY",
+      "called_at": "2026-02-24T09:16:05.909Z",
+      "status": "open"
+    },
+    {
       "slug": "khamenei-out-as-supreme-leader-of-iran-by-march-31",
       "question": "Khamenei out as Supreme Leader of Iran by March 31?",
       "signal_score": 8,
@@ -25,15 +34,6 @@
       "entry_price": 0.465,
       "flow_direction": "MINORITY_HEAVY",
       "called_at": "2026-02-23T13:04:55.667Z",
-      "status": "open"
-    },
-    {
-      "slug": "us-strikes-iran-by-march-31-2026-393-221-132-633-215-592-866-184-321-377-931-222-297-655-719-935-944-321-534-925-937-744-476-586-454-914-676-972-362-876-771-213-554-443-439-287-519-563-393-256-817-961-941-762-654-519-837-721-654-479-949-423-962-271-545",
-      "question": "US strikes Iran by March 31, 2026?",
-      "signal_score": 8,
-      "entry_price": 0.575,
-      "flow_direction": "MINORITY_HEAVY",
-      "called_at": "2026-02-23T05:04:55.202Z",
       "status": "open"
     },
     {
@@ -64,5 +64,5 @@
       "status": "open"
     }
   ],
-  "updated_at": "2026-02-24T03:01:49.403Z"
+  "updated_at": "2026-02-24T12:15:03.667Z"
 }
