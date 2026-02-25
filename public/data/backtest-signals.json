@@ -93,5 +93,16 @@
     "timestamp": "2026-02-24T15:09:22.350Z",
     "queued": true,
     "send_at": "2026-02-24T16:09:22.350Z"
+  },
+  {
+    "slug": "us-strikes-iran-by-february-27-2026",
+    "question": "US strikes Iran by February 27, 2026?",
+    "score": 9,
+    "threat_score": 6,
+    "yesPrice": 0.135,
+    "flowDirection": "MINORITY_HEAVY",
+    "timestamp": "2026-02-25T02:04:56.142Z",
+    "queued": true,
+    "send_at": "2026-02-25T03:04:56.142Z"
   }
 ]

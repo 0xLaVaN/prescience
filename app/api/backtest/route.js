@@ -100,17 +100,8 @@ function evalCallOutcome(callDirection, resolvedYesPrice) {
 }
 
 // ── Main handler ────────────────────────────────────────────────────────
-export async function GET(request) {
-  // Same-origin/internal bypass, then x402
+async function handleBacktest(request) {
   const url = new URL(request.url);
-  const internalKey = request.headers.get('x-internal-key');
-  const envKey = process.env.PRESCIENCE_INTERNAL_KEY;
-  const isSameOrigin = request.headers.get('x-same-origin') === '1';
-  if (!(isSameOrigin || (envKey && internalKey === envKey))) {
-    const payResult = await requirePayment(request);
-    if (payResult !== null) return payResult;
-  }
-
   const limitParam = parseInt(url.searchParams.get('limit') || '20', 10);
   const filterStatus = url.searchParams.get('status') || 'all'; // all | correct | incorrect | pending
 
@@ -262,3 +253,6 @@ export async function GET(request) {
     },
   }, { headers: { 'Cache-Control': 'public, max-age=300' } });
 }
+
+export const GET = requirePayment(handleBacktest);
+export const dynamic = 'force-dynamic';
