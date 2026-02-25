@@ -10,6 +10,24 @@
   },
   "calls": [
     {
+      "slug": "us-strikes-iran-by-march-31-2026-393-221-132-633-215-592-866-184-321-377-931-222-297-655-719-935-944-321-534-925-937-744-476-586-454-914-676-972-362-876-771-213-554-443-439-287-519-563-393-256-817-961-941-762-654-519-837-721-654-479-949-423-962-271-545",
+      "question": "US strikes Iran by March 31, 2026?",
+      "signal_score": 8,
+      "entry_price": 0.605,
+      "flow_direction": "MINORITY_HEAVY",
+      "called_at": "2026-02-25T11:07:01.653Z",
+      "status": "open"
+    },
+    {
+      "slug": "us-strikes-iran-by-february-28-2026-227-967-547-688-589-491-592-418-452-924-384-915-464-672-196-157-993-596-269-535-381-391-471-256-988-997-296-225-762-973-292-827-345-182-558-215-794-879-189-761",
+      "question": "US strikes Iran by February 28, 2026?",
+      "signal_score": 9,
+      "entry_price": 0.105,
+      "flow_direction": "MINORITY_HEAVY",
+      "called_at": "2026-02-25T08:05:56.529Z",
+      "status": "open"
+    },
+    {
       "slug": "us-strikes-iran-by-february-27-2026",
       "question": "US strikes Iran by February 27, 2026?",
       "signal_score": 9,
@@ -25,15 +43,6 @@
       "entry_price": 0.355,
       "flow_direction": "MINORITY_HEAVY",
       "called_at": "2026-02-24T15:09:22.350Z",
-      "status": "open"
-    },
-    {
-      "slug": "us-strikes-iran-by-march-31-2026-393-221-132-633-215-592-866-184-321-377-931-222-297-655-719-935-944-321-534-925-937-744-476-586-454-914-676-972-362-876-771-213-554-443-439-287-519-563-393-256-817-961-941-762-654-519-837-721-654-479-949-423-962-271-545",
-      "question": "US strikes Iran by March 31, 2026?",
-      "signal_score": 9,
-      "entry_price": 0.625,
-      "flow_direction": "MINORITY_HEAVY",
-      "called_at": "2026-02-24T09:16:05.909Z",
       "status": "open"
     },
     {
@@ -55,15 +64,6 @@
       "status": "open"
     },
     {
-      "slug": "us-strikes-iran-by-february-28-2026-227-967-547-688-589-491-592-418-452-924-384-915-464-672-196-157-993-596-269-535-381-391-471-256-988-997-296-225-762-973-292-827-345-182-558-215-794-879-189-761",
-      "question": "US strikes Iran by February 28, 2026?",
-      "signal_score": 11,
-      "entry_price": 0.185,
-      "flow_direction": "MINORITY_HEAVY",
-      "called_at": "2026-02-23T00:09:20.306Z",
-      "status": "open"
-    },
-    {
       "slug": "will-pltr-dip-to-126-in-february",
       "question": "Will Palantir dip to $126 in February?",
       "signal_score": 8,
@@ -82,5 +82,5 @@
       "status": "open"
     }
   ],
-  "updated_at": "2026-02-25T06:15:24.136Z"
+  "updated_at": "2026-02-25T12:19:10.649Z"
 }
