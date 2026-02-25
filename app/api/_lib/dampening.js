@@ -42,7 +42,14 @@ export function computeDampening(market) {
   let totalDampening = 0;
 
   // Rule 1: Sports market detection
-  const sportsMatches = SPORTS_KEYWORDS.filter(kw => question.includes(kw));
+  // GUARD: 'win' is a sports keyword but is ambiguous in political election markets.
+  // "Will Beshear WIN the 2028 Presidential Election?" is NOT a sports market.
+  // Exclude 'win' from matching when the question is clearly about elections/politics.
+  const isPoliticalElection = /presidential|nomination|nominee|election|senate race|governor race|congress/i.test(question);
+  const sportsMatches = SPORTS_KEYWORDS.filter(kw => {
+    if (kw === 'win' && isPoliticalElection) return false; // 'win' is ambiguous in elections
+    return question.includes(kw);
+  });
   if (sportsMatches.length >= 2) {
     // Strong sports signal: even bet distribution is normal
     totalDampening = Math.max(totalDampening, 0.3);

@@ -276,7 +276,7 @@ async function handleScan(request) {
           if (isWeekend || isOffHoursUTC) {
             offHoursTrades++;
             offHoursVolume += size;
-            if (size >= 5) offHoursLargeVolume += size; // $5+ trades (size is already in USD)
+            if (size >= 5000) offHoursLargeVolume += size; // $5000+ trades only (was $5 — way too permissive)
           }
         }
 
@@ -374,10 +374,15 @@ async function handleScan(request) {
         const rawConviction = normFlowV2 * 5 + normLargePositionRatio * 3 + normFreshExcess * 2 + normVolLiq * 1;
 
         // Off-hours signal amplifier: large trades during off-hours get boosted
+        // GUARD: Only amplify MINORITY_HEAVY or MIXED markets — consensus (MAJORITY_ALIGNED)
+        // flows during off-hours are simply global-user activity, not insider accumulation.
+        // THRESHOLD: Raised from $5K/$1K/50% to $50K/$10K/70% to prevent 100% market triggering.
         const offHoursTradesPct = trades.length > 0 ? offHoursTrades / trades.length : 0;
-        const offHoursMultiplier = offHoursLargeVolume >= 5000 ? 1.5 :
-                                    offHoursLargeVolume >= 1000 ? 1.3 :
-                                    offHoursTradesPct > 0.5 ? 1.15 : 1.0;
+        const offHoursAmplifiable = flowDirectionV2 !== 'MAJORITY_ALIGNED';
+        const offHoursMultiplier = !offHoursAmplifiable ? 1.0 :
+                                    offHoursLargeVolume >= 50000 ? 1.5 :
+                                    offHoursLargeVolume >= 10000 ? 1.3 :
+                                    offHoursTradesPct > 0.70 ? 1.15 : 1.0;
 
         let threatScore = Math.round((rawConviction / 11) * 100 * offHoursMultiplier);
 
