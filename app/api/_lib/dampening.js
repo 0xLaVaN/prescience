@@ -34,15 +34,25 @@ const ENTERTAINMENT_KEYWORDS = [
 /**
  * Apply dampening rules to a market
  * @param {Object} market - Market data with question, currentPrices, endDate, etc.
+ * @param {Object} [opts] - Optional computed signal data (from scan pipeline)
+ * @param {string} [opts.flowDirectionV2] - 'MAJORITY_ALIGNED' | 'MINORITY_HEAVY' | 'MIXED'
+ * @param {number} [opts.largePositionRatio] - Fraction of large positions (0–1)
+ * @param {number} [opts.minOutcomePrice] - Minimum outcome price (minority side proxy)
  * @returns {{ factor: number, reason: string|null, isDampened: boolean }}
  */
-export function computeDampening(market) {
+export function computeDampening(market, opts = {}) {
+  const {
+    flowDirectionV2 = null,
+    largePositionRatio = 0,
+    minOutcomePrice = null,
+  } = opts;
+
   const question = (market.question || '').toLowerCase();
   const reasons = [];
   let totalDampening = 0;
 
   // Rule 1: Sports market detection
-  // GUARD: 'win' is a sports keyword but is ambiguous in political election markets.
+  // GUARD: 'win' is a sports keywords but is ambiguous in political election markets.
   // "Will Beshear WIN the 2028 Presidential Election?" is NOT a sports market.
   // Exclude 'win' from matching when the question is clearly about elections/politics.
   const isPoliticalElection = /presidential|nomination|nominee|election|senate race|governor race|congress/i.test(question);
@@ -51,9 +61,26 @@ export function computeDampening(market) {
     return question.includes(kw);
   });
   if (sportsMatches.length >= 2) {
-    // Strong sports signal: even bet distribution is normal
-    totalDampening = Math.max(totalDampening, 0.3);
-    reasons.push(`sports_market(${sportsMatches.slice(0, 2).join(',')})`);
+    // Strong sports signal: even bet distribution is normal → baseline factor 0.30
+    let sportsFactor = 0.30;
+
+    // DIFFERENTIATION: MIXED-flow sports markets with high large-position ratio + meaningful price
+    // indicate institutional / informed money, not pure retail fan flow.
+    // Case study validated: Lens Ligue 1 (MIXED, 47% large positions, 22.9¢) was legitimate.
+    // Reduce dampening from 0.30 → 0.15 to preserve these signals.
+    let informedSportsSignal = false;
+    if (
+      flowDirectionV2 === 'MIXED' &&
+      largePositionRatio > 0.35 &&
+      (minOutcomePrice !== null ? minOutcomePrice > 0.10 : true)
+    ) {
+      sportsFactor = 0.15;
+      informedSportsSignal = true;
+      reasons.push(`sports_informed(MIXED,lpr=${Math.round(largePositionRatio * 100)}%)`);
+    } else {
+      reasons.push(`sports_market(${sportsMatches.slice(0, 2).join(',')})`);
+    }
+    totalDampening = Math.max(totalDampening, sportsFactor);
   } else if (sportsMatches.length === 1) {
     totalDampening = Math.max(totalDampening, 0.15);
     reasons.push(`possible_sports(${sportsMatches[0]})`);

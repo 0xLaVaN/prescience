@@ -455,7 +455,19 @@ async function handleScan(request) {
         } catch {}
 
         // NEW: False positive dampening (meme/sports/expiry rules)
-        const dampening = computeDampening(market);
+        // Pass computed signal context so sports dampening can differentiate
+        // informed institutional flow (MIXED + high LPR) from retail fan onboarding.
+        const minOutcomePrice = (() => {
+          try {
+            const vals = Object.values(currentPrices).map(Number).filter(n => !isNaN(n));
+            return vals.length > 0 ? Math.min(...vals) : null;
+          } catch { return null; }
+        })();
+        const dampening = computeDampening(market, {
+          flowDirectionV2,
+          largePositionRatio,
+          minOutcomePrice,
+        });
         if (dampening.isDampened) {
           threatScore = applyDampening(threatScore, dampening.factor);
           dampenedCount++;
@@ -471,6 +483,27 @@ async function handleScan(request) {
         }
         if (contextScoring.threat_score_cap !== null) {
           threatScore = Math.min(threatScore, contextScoring.threat_score_cap);
+        }
+
+        // GEOPOLITICAL FRESH WALLET OVERRIDE
+        // Validated by Iran strike Feb 20: high fresh_wallet_ratio (>60%) + concentrated flow
+        // (|imbalance|>0.55) + high volume (>500K) in geopolitical markets = real predictive
+        // positioning even when fw_excess is near zero.
+        // The fw_excess cap (score ≤ 6) was suppressing genuine geopolitical signals.
+        // Override: enforce minimum score of 25 (MODERATE) for these markets.
+        let geoFreshWalletOverride = false;
+        if (
+          contextScoring.market_category === 'geopolitical' &&
+          freshWalletRatio > 0.60 &&
+          Math.abs(flowImbalance) > 0.55 &&
+          totalVolume > 500000 &&
+          !consensusDampened &&
+          !nearExpiryConsensus
+        ) {
+          if (threatScore < 25) {
+            threatScore = 25;
+            geoFreshWalletOverride = true;
+          }
         }
 
         // LIVE EVENT DETECTION — cap threat score at 0 for live games
@@ -524,6 +557,7 @@ async function handleScan(request) {
           ...(contextScoring.context_note && { context_note: contextScoring.context_note }),
           ...(contextScoring.fw_excess_multiplier < 1 && { context_fw_multiplier: contextScoring.fw_excess_multiplier }),
           ...(contextScoring.context_dampening < 1 && { context_dampening: contextScoring.context_dampening }),
+          ...(geoFreshWalletOverride && { geo_fw_override: true, geo_fw_note: `geo_minority_signal(fw_ratio=${Math.round(freshWalletRatio * 100)}%,imbalance=${Math.round(Math.abs(flowImbalance) * 100)}%,vol=$${Math.round(totalVolume / 1000)}K)` }),
         };
 
         // Add dampening info

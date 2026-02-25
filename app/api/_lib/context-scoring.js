@@ -188,8 +188,11 @@ export function computeContextScoring(market, {
       notes.push('geo_news_cycle(majority_aligned,fw_excess<0.10)');
     }
     // MINORITY_HEAVY geopolitical markets are high-value — no dampening, add note
-    if (flowDirectionV2 === 'MINORITY_HEAVY' && freshWalletExcess >= 0.10) {
-      notes.push('geo_minority_signal(elevated_confidence)');
+    if (flowDirectionV2 === 'MINORITY_HEAVY') {
+      notes.push(freshWalletExcess >= 0.10
+        ? 'geo_minority_signal(elevated_confidence)'
+        : 'geo_minority_signal(low_fw_excess — check geo_fw_override)'
+      );
     }
   }
 
