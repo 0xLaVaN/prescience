@@ -1,14 +1,19 @@
 import { NextResponse } from 'next/server';
 import { requirePayment } from '../_lib/auth.js';
-import fs from 'fs';
+import fs   from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import https from 'https';
 
 const GAMMA_API  = 'https://gamma-api.polymarket.com';
 const CLOB_API   = 'https://clob.polymarket.com';
 
-// ── Signal log path (shared across agents) ──────────────────────────────
+// ── Signal log path — local (native runner) or bundled static (Vercel) ──
+// Vercel serverless cannot read /data/workspace-shared/ directly.
+// sync-backtest.mjs copies the signal log to public/data/backtest-signals.json
+// before every deploy so Vercel picks it up as a static asset.
 const POST_LOG_PATH = '/data/workspace-shared/signals/telegram-post-log.json';
+const STATIC_DATA_PATH = path.join(process.cwd(), 'public', 'data', 'backtest-signals.json');
 
 // ── HTTP helper ──────────────────────────────────────────────────────────
 function fetchJSON(url) {
@@ -110,11 +115,16 @@ export async function GET(request) {
   const filterStatus = url.searchParams.get('status') || 'all'; // all | correct | incorrect | pending
 
   // ── Load signal log ────────────────────────────────────────────────────
+  // Try local /data path first (native runner), fall back to bundled static file (Vercel)
   let rawSignals = [];
   try {
     rawSignals = JSON.parse(fs.readFileSync(POST_LOG_PATH, 'utf-8'));
   } catch {
-    rawSignals = [];
+    try {
+      rawSignals = JSON.parse(fs.readFileSync(STATIC_DATA_PATH, 'utf-8'));
+    } catch {
+      rawSignals = [];
+    }
   }
 
   // Deduplicate by slug — keep the EARLIEST signal per slug (first call)
