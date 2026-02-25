@@ -66,6 +66,22 @@ const SPORTS_PATTERNS = [
 // Category classifier
 // ────────────────────────────────────────────────────────────────────────────
 
+// Primary crypto identifiers — if these appear in the QUESTION, always classify as crypto.
+// Prevents description-pollution from sports patterns misclassifying BTC/ETH markets.
+const PRIMARY_CRYPTO_IDENTIFIERS = [
+  'bitcoin', 'btc', 'ethereum', 'eth', 'crypto', 'blockchain', 'defi',
+  'nft', 'halving', 'on-chain', 'dogecoin', 'doge', 'solana', 'shib',
+];
+
+// Sports keywords that reliably identify sports when found in the question itself.
+// Checked before description pollution can affect scoring.
+const SPORTS_QUESTION_KEYWORDS = [
+  'nba', 'nfl', 'nhl', 'mlb', 'ufc', 'pga', 'mma', 'f1', 'formula 1',
+  'ligue 1', 'la liga', 'serie a', 'bundesliga', 'premier league',
+  'champions league', 'europa league', 'world cup', 'super bowl',
+  'stanley cup', 'championship', 'playoff', 'tournament',
+];
+
 /**
  * Classify a market by topic category.
  * @param {Object} market - Market with .question, .description
@@ -76,7 +92,17 @@ export function classifyMarket(market) {
   const desc = (market.description || '').toLowerCase();
   const text = q + ' ' + desc;
 
-  // Sports — check first (specific patterns)
+  // ── Priority 0: Strong sports identifiers in the QUESTION itself ────────
+  // Prevents crypto keywords in descriptions from misclassifying sports markets.
+  // (e.g. "Will Lens win Ligue 1?" has description mentioning "Avalanche" blockchain)
+  if (SPORTS_QUESTION_KEYWORDS.some(kw => q.includes(kw))) return 'sports';
+
+  // ── Priority 1: Primary crypto identifiers in the QUESTION itself ────────
+  // Prevents sports patterns in descriptions from misclassifying BTC/ETH markets.
+  // (e.g. "Will Bitcoin dip to $55K?" may have description with "finals"/"game")
+  if (PRIMARY_CRYPTO_IDENTIFIERS.some(kw => q.includes(kw))) return 'crypto';
+
+  // Sports — check full text (question + description) for specific patterns
   if (SPORTS_PATTERNS.some(p => p.test(text))) return 'sports';
 
   // Score keyword matches

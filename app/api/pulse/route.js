@@ -132,6 +132,14 @@ async function handlePulse(request) {
           if (hrsToExp < 48 && maxPrice >= 0.95) score = Math.round(score * 0.3);
         } catch {}
 
+        // ── Sync with scan pipeline: apply the same false-positive dampening ─
+        // Pulse was missing this step, causing pulse scores to be ~2x scan scores
+        // for micro-price, meme, sports, and near-expiry markets.
+        try {
+          const { factor: pDampFactor, isDampened: pIsDampened } = computeDampening(market);
+          if (pIsDampened) score = applyDampening(score, pDampFactor);
+        } catch {}
+
         if (score > activeHighestScore) activeHighestScore = score;
         if (score >= 25) activeHotMarkets.push({ question: market.question, conditionId: market.conditionId, slug: market.slug, threat_score: score, flow_direction_v2: pFlowV2 });
       } catch {}
