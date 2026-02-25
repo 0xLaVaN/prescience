@@ -95,7 +95,21 @@ export function classifyMarket(market) {
   // ── Priority 0: Strong sports identifiers in the QUESTION itself ────────
   // Prevents crypto keywords in descriptions from misclassifying sports markets.
   // (e.g. "Will Lens win Ligue 1?" has description mentioning "Avalanche" blockchain)
+  // Also covers match-result markets like "Will Real Madrid CF win on 2026-02-25?"
+  // where no explicit sports league name appears but the format is clearly a match result.
   if (SPORTS_QUESTION_KEYWORDS.some(kw => q.includes(kw))) return 'sports';
+
+  // Match-result pattern: "will [team] win on [date]" — sports match result, not crypto
+  // Prevents settlement boilerplate (USDC, Base) in descriptions from triggering crypto classification.
+  if (/\bwin\b.{0,30}on\b.{0,15}\d{4}[-/]\d{2}[-/]\d{2}/i.test(q)) return 'sports';
+
+  // Well-known sports clubs/teams that appear alone in the question (no league name needed)
+  const SPORTS_CLUBS_IN_QUESTION = [
+    'real madrid', 'barcelona', 'manchester city', 'manchester united', 'arsenal', 'liverpool',
+    'chelsea fc', 'juventus', 'ac milan', 'inter milan', 'paris saint-germain', 'psg',
+    'benfica', 'porto', 'ajax', 'celtic', 'rangers fc',
+  ];
+  if (SPORTS_CLUBS_IN_QUESTION.some(kw => q.includes(kw))) return 'sports';
 
   // ── Priority 1: Primary crypto identifiers in the QUESTION itself ────────
   // Prevents sports patterns in descriptions from misclassifying BTC/ETH markets.

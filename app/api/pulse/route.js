@@ -120,16 +120,35 @@ async function handlePulse(request) {
         if (largePos === 0) score = Math.min(score, 50);
         const totalVol = buyVol + sellVol;
         if (totalVol < 5000 || totalW < 10) score = Math.min(score, 15);
+
+        let pConsensusDampened = false;
         try {
           const prices = JSON.parse(market.outcomePrices || '[]');
           const maxPrice = Math.max(...prices.map(p => parseFloat(p) || 0));
-          if (maxPrice >= 0.98 && excessFresh <= 0.20) score = Math.round(score * 0.4);
+          if (maxPrice >= 0.98 && excessFresh <= 0.20) { score = Math.round(score * 0.4); pConsensusDampened = true; }
         } catch {}
         try {
           const prices = JSON.parse(market.outcomePrices || '[]');
           const maxPrice = Math.max(...prices.map(p => parseFloat(p) || 0));
           const hrsToExp = market.endDate ? (new Date(market.endDate).getTime() - Date.now()) / 3600000 : Infinity;
           if (hrsToExp < 48 && maxPrice >= 0.95) score = Math.round(score * 0.3);
+        } catch {}
+
+        // ── NEW MARKET BOOST: sync with scan pipeline ─────────────────────
+        // Markets <48h old with whale activity get +3-5 pts in scan.
+        // Pulse was missing this boost, causing pulse=6 vs scan=11 gaps on
+        // fresh markets (score_base=6 + new_market_boost=5 = 11 in scan).
+        try {
+          const createdAtRaw = market.createdAt || market.startDate;
+          if (createdAtRaw) {
+            const ageHours = (Date.now() - new Date(createdAtRaw).getTime()) / 3600000;
+            if (ageHours >= 0 && ageHours < 48 && !pConsensusDampened) {
+              const maxSingleWalletVol = Math.max(0, ...Object.values(wallets).map(w => w.volume));
+              if (maxSingleWalletVol > 50000 || totalVol > 100000) score += 5;
+              else if (maxSingleWalletVol > 20000 || totalVol > 50000) score += 4;
+              else if (maxSingleWalletVol > 5000 || totalVol > 10000) score += 3;
+            }
+          }
         } catch {}
 
         // ── Sync with scan pipeline: apply the same false-positive dampening ─

@@ -52,12 +52,14 @@ export function computeDampening(market, opts = {}) {
   let totalDampening = 0;
 
   // Rule 1: Sports market detection
-  // GUARD: 'win' is a sports keywords but is ambiguous in political election markets.
+  // GUARD: Some sports keywords are ambiguous in political election/nomination markets.
   // "Will Beshear WIN the 2028 Presidential Election?" is NOT a sports market.
-  // Exclude 'win' from matching when the question is clearly about elections/politics.
+  // "Will Chelsea Clinton WIN the 2028 Democratic nomination?" is NOT a sports market.
+  // Exclude 'win' and 'chelsea' from sports matching when the question is clearly about elections/politics.
   const isPoliticalElection = /presidential|nomination|nominee|election|senate race|governor race|congress/i.test(question);
   const sportsMatches = SPORTS_KEYWORDS.filter(kw => {
     if (kw === 'win' && isPoliticalElection) return false; // 'win' is ambiguous in elections
+    if (kw === 'chelsea' && isPoliticalElection) return false; // 'chelsea' matches Chelsea Clinton, not Chelsea FC
     return question.includes(kw);
   });
   if (sportsMatches.length >= 2) {
