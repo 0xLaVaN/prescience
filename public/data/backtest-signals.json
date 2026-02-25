@@ -1,0 +1,97 @@
+[
+  {
+    "slug": "openai-ipo-closing-market-cap-above-1t",
+    "question": "OpenAI IPO closing market cap above $1T?",
+    "score": 8,
+    "threat_score": 8,
+    "yesPrice": 0.58,
+    "flowDirection": "MINORITY_HEAVY",
+    "timestamp": "2026-02-22T04:33:13.966Z"
+  },
+  {
+    "slug": "us-strikes-iran-by-march-31-2026-393-221-132-633-215-592-866-184-321-377-931-222-297-655-719-935-944-321-534-925-937-744-476-586-454-914-676-972-362-876-771-213-554-443-439-287-519-563-393-256-817-961-941-762-654-519-837-721-654-479-949-423-962-271-545",
+    "question": "US strikes Iran by March 31, 2026?",
+    "score": 8,
+    "threat_score": 6,
+    "yesPrice": 0.575,
+    "flowDirection": "MINORITY_HEAVY",
+    "timestamp": "2026-02-22T04:33:14.367Z"
+  },
+  {
+    "slug": "will-pltr-dip-to-126-in-february",
+    "question": "Will Palantir dip to $126 in February?",
+    "score": 8,
+    "threat_score": 11,
+    "yesPrice": 0.355,
+    "flowDirection": "MINORITY_HEAVY",
+    "timestamp": "2026-02-22T06:07:34.633Z",
+    "queued": true,
+    "send_at": "2026-02-22T07:07:34.633Z"
+  },
+  {
+    "slug": "us-strikes-iran-by-february-28-2026-227-967-547-688-589-491-592-418-452-924-384-915-464-672-196-157-993-596-269-535-381-391-471-256-988-997-296-225-762-973-292-827-345-182-558-215-794-879-189-761",
+    "question": "US strikes Iran by February 28, 2026?",
+    "score": 11,
+    "threat_score": 9,
+    "yesPrice": 0.185,
+    "flowDirection": "MINORITY_HEAVY",
+    "timestamp": "2026-02-23T00:09:20.306Z",
+    "queued": true,
+    "send_at": "2026-02-23T01:09:20.306Z"
+  },
+  {
+    "slug": "us-strikes-iran-by-march-31-2026-393-221-132-633-215-592-866-184-321-377-931-222-297-655-719-935-944-321-534-925-937-744-476-586-454-914-676-972-362-876-771-213-554-443-439-287-519-563-393-256-817-961-941-762-654-519-837-721-654-479-949-423-962-271-545",
+    "question": "US strikes Iran by March 31, 2026?",
+    "score": 8,
+    "threat_score": 6,
+    "yesPrice": 0.575,
+    "flowDirection": "MINORITY_HEAVY",
+    "timestamp": "2026-02-23T05:04:55.202Z",
+    "queued": true,
+    "send_at": "2026-02-23T06:04:55.202Z"
+  },
+  {
+    "slug": "us-strikes-iran-by-march-15-2026-176-537-334-314-311-563-139-841-296-929-674-361-128-125-587-277-713-864-314-272",
+    "question": "US strikes Iran by March 15, 2026?",
+    "score": 8,
+    "threat_score": 6,
+    "yesPrice": 0.465,
+    "flowDirection": "MINORITY_HEAVY",
+    "timestamp": "2026-02-23T13:04:55.667Z",
+    "queued": true,
+    "send_at": "2026-02-23T14:04:55.667Z"
+  },
+  {
+    "slug": "khamenei-out-as-supreme-leader-of-iran-by-march-31",
+    "question": "Khamenei out as Supreme Leader of Iran by March 31?",
+    "score": 8,
+    "threat_score": 6,
+    "yesPrice": 0.205,
+    "flowDirection": "MINORITY_HEAVY",
+    "timestamp": "2026-02-24T00:06:29.493Z",
+    "queued": true,
+    "send_at": "2026-02-24T01:06:29.493Z"
+  },
+  {
+    "slug": "us-strikes-iran-by-march-31-2026-393-221-132-633-215-592-866-184-321-377-931-222-297-655-719-935-944-321-534-925-937-744-476-586-454-914-676-972-362-876-771-213-554-443-439-287-519-563-393-256-817-961-941-762-654-519-837-721-654-479-949-423-962-271-545",
+    "question": "US strikes Iran by March 31, 2026?",
+    "score": 9,
+    "threat_score": 8,
+    "yesPrice": 0.625,
+    "flowDirection": "MINORITY_HEAVY",
+    "timestamp": "2026-02-24T09:16:05.909Z",
+    "queued": true,
+    "send_at": "2026-02-24T10:16:05.909Z"
+  },
+  {
+    "slug": "will-bitcoin-dip-to-60000-in-february-694",
+    "question": "Will Bitcoin dip to $60,000 in February?",
+    "score": 10,
+    "threat_score": 6,
+    "yesPrice": 0.355,
+    "flowDirection": "MINORITY_HEAVY",
+    "timestamp": "2026-02-24T15:09:22.350Z",
+    "queued": true,
+    "send_at": "2026-02-24T16:09:22.350Z"
+  }
+]
