@@ -1,14 +1,27 @@
 {
   "stats": {
-    "total_calls": 8,
+    "total_calls": 9,
     "resolved": 0,
-    "open": 8,
+    "open": 9,
     "wins": 0,
     "losses": 0,
     "win_rate": null,
     "cumulative_pnl": null
   },
   "calls": [
+    {
+      "slug": "ethereum-etf-flows-on-february-26",
+      "question": "Ethereum ETF Flows on February 26?",
+      "signal_score": 10,
+      "entry_price": null,
+      "current_price": null,
+      "price_delta": null,
+      "live_status": "OPEN",
+      "implied_pnl": null,
+      "flow_direction": "MINORITY_HEAVY",
+      "called_at": "2026-02-26T00:04:56.152Z",
+      "status": "open"
+    },
     {
       "slug": "us-strikes-iran-by-march-31-2026-393-221-132-633-215-592-866-184-321-377-931-222-297-655-719-935-944-321-534-925-937-744-476-586-454-914-676-972-362-876-771-213-554-443-439-287-519-563-393-256-817-961-941-762-654-519-837-721-654-479-949-423-962-271-545",
       "question": "US strikes Iran by March 31, 2026?",
@@ -131,5 +144,5 @@
       "next_trigger": "ZachXBT report release — Meteora named = proof-of-call confirmed"
     }
   ],
-  "updated_at": "2026-02-25T21:30:56.813Z"
+  "updated_at": "2026-02-26T00:15:03.497Z"
 }
