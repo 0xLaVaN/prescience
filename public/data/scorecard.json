@@ -10,6 +10,19 @@
   },
   "calls": [
     {
+      "slug": "ethereum-etf-flows-on-february-26",
+      "question": "Ethereum ETF Flows on February 26?",
+      "signal_score": 12,
+      "entry_price": null,
+      "current_price": 0.905,
+      "price_delta": "+90.5pp",
+      "live_status": "WINNING",
+      "implied_pnl": "+Infinity%",
+      "flow_direction": "MINORITY_HEAVY",
+      "called_at": "2026-02-26T08:04:56.011Z",
+      "status": "open"
+    },
+    {
       "slug": "will-axiom-be-accused-of-insider-trading",
       "question": "Will Axiom be accused of insider trading?",
       "signal_score": 6,
@@ -20,19 +33,6 @@
       "implied_pnl": null,
       "flow_direction": "MINORITY_HEAVY",
       "called_at": "2026-02-26T06:05:00.659Z",
-      "status": "open"
-    },
-    {
-      "slug": "ethereum-etf-flows-on-february-26",
-      "question": "Ethereum ETF Flows on February 26?",
-      "signal_score": 10,
-      "entry_price": null,
-      "current_price": 0.905,
-      "price_delta": "+90.5pp",
-      "live_status": "WINNING",
-      "implied_pnl": "+Infinity%",
-      "flow_direction": "MINORITY_HEAVY",
-      "called_at": "2026-02-26T00:04:56.152Z",
       "status": "open"
     },
     {
@@ -157,5 +157,5 @@
       "next_trigger": "ZachXBT report release. Still pending as of 23:32 UTC."
     }
   ],
-  "updated_at": "2026-02-26T06:15:03.161Z"
+  "updated_at": "2026-02-26T12:15:03.729Z"
 }
