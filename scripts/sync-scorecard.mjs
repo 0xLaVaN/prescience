@@ -14,14 +14,30 @@ import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const POST_LOG = '/data/workspace-shared/signals/telegram-post-log.json';
-const RECEIPTS = '/data/workspace-shared/signals/resolution-receipts.json';
+const POST_LOG    = '/data/workspace-shared/signals/telegram-post-log.json';
+const RECEIPTS    = '/data/workspace-shared/signals/resolution-receipts.json';
+const LIVE_PROOFS = '/data/workspace-shared/signals/live-proofs.json';
 const OUT = path.resolve(__dirname, '..', 'public', 'data', 'scorecard.json');
 
 function load(p) { try { return JSON.parse(fs.readFileSync(p, 'utf-8')); } catch { return []; } }
 
-const postLog = load(POST_LOG);
-const receipts = load(RECEIPTS);
+const postLog   = load(POST_LOG);
+const receipts  = load(RECEIPTS);
+const liveProofsData = load(LIVE_PROOFS);
+const liveProofs = liveProofsData?.proofs || [];
+// Build a live-price lookup by slug
+const livePriceBySlug = {};
+for (const p of liveProofs) {
+  if (p.slug) {
+    livePriceBySlug[p.slug] = {
+      current_price: p.current_price ?? p.current_yes_price,
+      delta_str: p.delta_from_signal_str,
+      status: p.status,
+      implied_pnl: p.implied_pnl || null,
+      proof_text: p.proof_text || null,
+    };
+  }
+}
 const resolvedSlugs = new Set(receipts.map(r => r.slug));
 
 // Deduplicate post log by slug — keep latest signal per slug (bot sometimes re-signals same market)
@@ -34,15 +50,22 @@ for (const p of postLog) {
 }
 const deduplicatedLog = Object.values(latestBySlug);
 
-const openCalls = deduplicatedLog.filter(p => !resolvedSlugs.has(p.slug)).map(p => ({
-  slug: p.slug,
-  question: p.question,
-  signal_score: p.score || p.threat_score,
-  entry_price: p.yesPrice,
-  flow_direction: p.flowDirection,
-  called_at: p.timestamp,
-  status: 'open',
-}));
+const openCalls = deduplicatedLog.filter(p => !resolvedSlugs.has(p.slug)).map(p => {
+  const live = livePriceBySlug[p.slug] || {};
+  return {
+    slug: p.slug,
+    question: p.question,
+    signal_score: p.score || p.threat_score,
+    entry_price: p.yesPrice,
+    current_price: live.current_price ?? null,
+    price_delta: live.delta_str || null,
+    live_status: live.status || 'OPEN',
+    implied_pnl: live.implied_pnl || null,
+    flow_direction: p.flowDirection,
+    called_at: p.timestamp,
+    status: 'open',
+  };
+});
 
 const resolvedCalls = receipts.map(r => ({
   slug: r.slug,
@@ -68,6 +91,25 @@ function parsePnl(pnlStr) {
   return parseFloat(String(pnlStr).replace('%','').replace('+','')) || 0;
 }
 
+// Scanner pre-public flags (like Meteora) — not formal signals but tracked detections
+const scannerFlags = liveProofs
+  .filter(p => p.source === 'tars-scanner-flag')
+  .map(p => ({
+    id: p.id,
+    market: p.market,
+    slug: p.slug || null,
+    type: 'PRE_PUBLIC_DETECTION',
+    original_price: p.original_price,
+    current_price: p.current_price,
+    peak_price: p.peak_price || null,
+    delta: p.delta_from_signal_str,
+    flag_time: p.original_flag_time,
+    flag_time_est: p.original_flag_time_est,
+    status: p.status,
+    summary: p.flag_summary,
+    next_trigger: p.next_trigger || null,
+  }));
+
 const data = {
   stats: {
     total_calls: allCalls.length,
@@ -81,6 +123,7 @@ const data = {
       : null,
   },
   calls: allCalls,
+  scanner_flags: scannerFlags,
   updated_at: new Date().toISOString(),
 };
 

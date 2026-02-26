@@ -3,6 +3,7 @@
  */
 
 const GAMMA_API = 'https://gamma-api.polymarket.com';
+const CLOB_API = 'https://clob.polymarket.com';
 const DATA_API = 'https://data-api.polymarket.com';
 
 // Cache
@@ -26,24 +27,113 @@ export async function fetchJSON(url) {
   return res.json();
 }
 
+/**
+ * Normalize a CLOB API market object to match the gamma-api schema
+ * that the rest of the codebase expects.
+ */
+function normalizeClobMarket(m) {
+  const tokens = m.tokens || [];
+  const outcomePrices = JSON.stringify(tokens.map(t => String(t.price ?? 0)));
+  const outcomes = JSON.stringify(tokens.map(t => t.outcome || ''));
+  return {
+    conditionId: m.condition_id,
+    questionId: m.question_id,
+    question: m.question,
+    slug: m.market_slug,
+    description: m.description,
+    outcomePrices,
+    outcomes,
+    closed: m.closed,
+    active: m.active,
+    archived: m.archived,
+    endDate: m.end_date_iso,
+    closedTime: m.closed ? m.end_date_iso : null,
+    createdAt: m.game_start_time || m.end_date_iso,
+    startDate: m.game_start_time || m.end_date_iso,
+    image: m.image,
+    icon: m.icon,
+    tags: m.tags,
+    // CLOB doesn't provide these; default to 0
+    volume24hr: '0',
+    volumeNum: 0,
+    liquidityNum: '0',
+    volume24h: '0',
+    // Preserve raw tokens for winner detection
+    _tokens: tokens,
+  };
+}
+
+/**
+ * Fetch markets from CLOB API with pagination.
+ * Returns normalized market objects.
+ */
+async function fetchClobMarkets({ closed, active, limit = 50 } = {}) {
+  const allMarkets = [];
+  let cursor = '';
+  let failCount = 0;
+  const batchSize = Math.min(limit, 100);
+
+  while (allMarkets.length < limit && failCount < 3) {
+    try {
+      const params = new URLSearchParams({ limit: String(batchSize) });
+      if (closed !== undefined) params.set('closed', String(closed));
+      if (active !== undefined) params.set('active', String(active));
+      if (cursor) params.set('next_cursor', cursor);
+
+      const data = await fetchJSON(`${CLOB_API}/markets?${params}`);
+      const batch = data.data || [];
+      if (batch.length === 0) break;
+
+      allMarkets.push(...batch.map(normalizeClobMarket));
+      cursor = data.next_cursor || '';
+      if (!cursor || cursor === 'LTE=') break;
+      if (batch.length < batchSize) break;
+    } catch (err) {
+      console.error(`CLOB batch fetch failed:`, err.message);
+      failCount++;
+    }
+  }
+
+  return allMarkets.slice(0, limit);
+}
+
+/**
+ * Try gamma-api first; on failure, fall back to CLOB API.
+ */
+async function fetchMarketsWithFallback(gammaUrl, clobOpts, postProcess) {
+  // Try gamma-api first
+  try {
+    const data = await fetchJSON(gammaUrl);
+    if (Array.isArray(data) && data.length > 0) return postProcess ? postProcess(data) : data;
+  } catch (err) {
+    console.warn(`Gamma API failed (${err.message}), falling back to CLOB API`);
+  }
+  // Fallback to CLOB
+  const markets = await fetchClobMarkets(clobOpts);
+  return postProcess ? postProcess(markets) : markets;
+}
+
 export async function getResolvedMarkets(limit = 50) {
   return cached(`resolved_markets_${limit}`, MARKET_CACHE_TTL, async () => {
-    const markets = await fetchJSON(
-      `${GAMMA_API}/markets?closed=true&limit=${limit}&order=closedTime&ascending=false`
+    return fetchMarketsWithFallback(
+      `${GAMMA_API}/markets?closed=true&limit=${limit}&order=closedTime&ascending=false`,
+      { closed: true, limit },
+      (markets) => markets.filter(m => {
+        try {
+          const prices = JSON.parse(m.outcomePrices || '[]');
+          return prices.some(p => parseFloat(p) === 1 || parseFloat(p) === 0);
+        } catch { return false; }
+      })
     );
-    return markets.filter(m => {
-      try {
-        const prices = JSON.parse(m.outcomePrices || '[]');
-        return prices.some(p => parseFloat(p) === 1 || parseFloat(p) === 0);
-      } catch { return false; }
-    });
   });
 }
 
 export async function getActiveMarkets(limit = 30) {
   return cached(`active_markets_${limit}`, MARKET_CACHE_TTL, async () => {
-    return fetchJSON(
-      `${GAMMA_API}/markets?closed=false&limit=${limit}&order=volume24hr&ascending=false`
+    return fetchMarketsWithFallback(
+      `${GAMMA_API}/markets?closed=false&limit=${limit}&order=volume24hr&ascending=false`,
+      { closed: false, limit },
+      null
     );
   });
 }
@@ -55,26 +145,30 @@ export async function getActiveMarkets(limit = 30) {
  */
 export async function getAllActiveMarkets(maxMarkets = 2000) {
   return cached(`all_active_markets_${maxMarkets}`, MARKET_CACHE_TTL, async () => {
-    const allMarkets = [];
-    const batchSize = 100;
-    let offset = 0;
-    let failCount = 0;
+    let allMarkets = [];
 
-    while (allMarkets.length < maxMarkets && failCount < 3) {
-      try {
+    // Try gamma-api first
+    try {
+      const batchSize = 100;
+      let offset = 0;
+      let failCount = 0;
+      while (allMarkets.length < maxMarkets && failCount < 3) {
         const batch = await fetchJSON(
           `${GAMMA_API}/markets?active=true&limit=${batchSize}&offset=${offset}`
         );
         if (!batch || !Array.isArray(batch) || batch.length === 0) break;
         allMarkets.push(...batch);
         offset += batchSize;
-        // If we got fewer than batchSize, we've reached the end
         if (batch.length < batchSize) break;
-      } catch (err) {
-        console.error(`Polymarket batch fetch failed at offset ${offset}:`, err.message);
-        failCount++;
-        offset += batchSize; // Skip failed batch
       }
+    } catch (err) {
+      console.warn(`Gamma API pagination failed (${err.message}), falling back to CLOB`);
+      allMarkets = [];
+    }
+
+    // Fallback to CLOB if gamma failed
+    if (allMarkets.length === 0) {
+      allMarkets = await fetchClobMarkets({ active: true, closed: false, limit: maxMarkets });
     }
 
     // Sort by 24h volume descending, dedup by conditionId

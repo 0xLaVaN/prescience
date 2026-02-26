@@ -36,8 +36,8 @@ const globalStyles = `
   .stat-card:hover { border-color: rgba(0,240,255,0.2); }
   .call-row {
     display: grid;
-    grid-template-columns: 1fr 100px 100px 80px 100px;
-    gap: 12px;
+    grid-template-columns: 1fr 80px 90px 90px 80px 100px;
+    gap: 10px;
     align-items: center;
     padding: 14px 16px;
     border-bottom: 1px solid rgba(255,255,255,0.04);
@@ -52,6 +52,14 @@ const globalStyles = `
     }
     .call-row .hide-mobile { display: none; }
   }
+  .flag-card {
+    background: rgba(255,204,0,0.04);
+    border: 1px solid rgba(255,204,0,0.15);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-bottom: 10px;
+  }
+  .flag-card:hover { border-color: rgba(255,204,0,0.35); background: rgba(255,204,0,0.07); }
   .shimmer-bar {
     height: 16px;
     border-radius: 4px;
@@ -144,8 +152,9 @@ export default function ScorecardClient({ initialData }) {
       .catch(e => { setError(e.message); setLoading(false); });
   }, []);
 
-  const stats = data?.stats;
-  const calls = data?.calls || [];
+  const stats        = data?.stats;
+  const calls        = data?.calls || [];
+  const scannerFlags = data?.scanner_flags || [];
 
   return (
     <>
@@ -229,6 +238,79 @@ export default function ScorecardClient({ initialData }) {
           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#00f0ff]/20 to-transparent" />
         </div>
 
+        {/* Scanner Flags — Pre-Public Detections */}
+        {scannerFlags.length > 0 && (
+          <section className="relative z-10 px-6 py-10">
+            <div className="max-w-5xl mx-auto">
+              <div className="flex items-center gap-3 mb-5">
+                <span style={{ fontSize: 16, color: '#ffcc00' }}>⚡</span>
+                <h2 className="text-lg font-bold" style={{ fontFamily: 'Inter, sans-serif', color: '#ffcc00' }}>
+                  Pre-Public Detections
+                </h2>
+                <span className="text-xs font-mono px-2 py-0.5 rounded ml-1"
+                  style={{ background: 'rgba(255,204,0,0.1)', color: '#ffcc00', border: '1px solid rgba(255,204,0,0.2)' }}>
+                  TARS SCANNER FLAGS
+                </span>
+              </div>
+              <p className="text-white/30 text-sm mb-6" style={{ fontFamily: 'Inter, sans-serif' }}>
+                Markets our scanner flagged with unusual activity <em>before</em> any public reporting.
+                These aren't formal signal posts — they're raw TARS detections captured as proof-of-early-detection.
+              </p>
+              {scannerFlags.map((flag, i) => (
+                <div key={flag.id} className="flag-card animate-fade-in" style={{ animationDelay: `${0.1 * i}s` }}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-white/90 mb-1" style={{ fontFamily: 'Inter, sans-serif' }}>
+                        {flag.market}
+                      </div>
+                      <div className="text-xs font-mono text-white/30 mb-2">
+                        Flagged {flag.flag_time_est || new Date(flag.flag_time).toUTCString().replace(' GMT', ' UTC')}
+                      </div>
+                      <div className="text-sm text-white/40 leading-relaxed" style={{ fontFamily: 'Inter, sans-serif' }}>
+                        {flag.summary}
+                      </div>
+                      {flag.next_trigger && (
+                        <div className="text-xs font-mono mt-2" style={{ color: '#ffcc00', opacity: 0.7 }}>
+                          ⏳ {flag.next_trigger}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-col items-end gap-2 shrink-0">
+                      <div className="font-mono text-sm">
+                        <span className="text-white/30">At signal: </span>
+                        <span className="text-white/70">{flag.original_price != null ? `${(flag.original_price * 100).toFixed(0)}¢` : '—'}</span>
+                      </div>
+                      {flag.peak_price && (
+                        <div className="font-mono text-sm">
+                          <span className="text-white/30">Peak: </span>
+                          <span style={{ color: '#00ff88' }}>{(flag.peak_price * 100).toFixed(0)}¢</span>
+                        </div>
+                      )}
+                      <div className="font-mono text-sm">
+                        <span className="text-white/30">Now: </span>
+                        <span className="text-white/70">{flag.current_price != null ? `${(flag.current_price * 100).toFixed(0)}¢` : '—'}</span>
+                        {flag.delta && (
+                          <span className="ml-2 text-xs" style={{ color: flag.delta.startsWith('+') ? '#00ff88' : flag.delta.startsWith('-') ? '#ff3366' : '#ffcc00' }}>
+                            {flag.delta}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-xs font-mono px-2 py-0.5 rounded"
+                        style={{
+                          background: flag.status === 'CONFIRMED_MOVE' ? 'rgba(0,255,136,0.1)' : 'rgba(255,204,0,0.1)',
+                          color: flag.status === 'CONFIRMED_MOVE' ? '#00ff88' : '#ffcc00',
+                          border: `1px solid ${flag.status === 'CONFIRMED_MOVE' ? 'rgba(0,255,136,0.2)' : 'rgba(255,204,0,0.2)'}`,
+                        }}>
+                        {flag.status}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* Calls Table */}
         <section className="relative z-10 px-6 py-12">
           <div className="max-w-5xl mx-auto">
@@ -241,7 +323,8 @@ export default function ScorecardClient({ initialData }) {
               <div>Market</div>
               <div className="text-center">Score</div>
               <div className="text-center">Entry</div>
-              <div className="text-center hide-mobile">Flow</div>
+              <div className="text-center hide-mobile">Now</div>
+              <div className="text-center hide-mobile">Δ</div>
               <div className="text-center">Status</div>
             </div>
 
@@ -281,13 +364,19 @@ export default function ScorecardClient({ initialData }) {
                   <div className="text-center font-mono text-sm text-white/60">
                     {call.entry_price != null ? `${(call.entry_price * 100).toFixed(0)}¢` : '—'}
                   </div>
-                  <div className="text-center hide-mobile">
-                    <span className="text-xs font-mono px-2 py-0.5 rounded" style={{
-                      background: call.flow_direction === 'MINORITY_HEAVY' ? 'rgba(255,51,102,0.1)' : 'rgba(255,255,255,0.03)',
-                      color: call.flow_direction === 'MINORITY_HEAVY' ? '#ff3366' : 'rgba(255,255,255,0.3)',
-                    }}>
-                      {call.flow_direction === 'MINORITY_HEAVY' ? 'CONTRA' : call.flow_direction === 'MAJORITY_ALIGNED' ? 'ALIGN' : 'MIX'}
-                    </span>
+                  <div className="text-center hide-mobile font-mono text-sm">
+                    {call.current_price != null ? (
+                      <span style={{ color: call.current_price > call.entry_price ? '#00ff88' : call.current_price < call.entry_price ? '#ff3366' : 'rgba(255,255,255,0.4)' }}>
+                        {(call.current_price * 100).toFixed(0)}¢
+                      </span>
+                    ) : <span className="text-white/20">—</span>}
+                  </div>
+                  <div className="text-center hide-mobile font-mono text-xs">
+                    {call.price_delta ? (
+                      <span style={{ color: call.price_delta.startsWith('+') ? '#00ff88' : call.price_delta.startsWith('-') ? '#ff3366' : 'rgba(255,255,255,0.4)' }}>
+                        {call.price_delta}
+                      </span>
+                    ) : <span className="text-white/20">—</span>}
                   </div>
                   <div className="text-center">
                     <StatusBadge status={call.status} outcome={call.outcome} correct={call.correct} />

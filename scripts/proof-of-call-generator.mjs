@@ -178,26 +178,50 @@ function buildFlagProof(flag, currentPrice) {
 // ── Build proof from telegram post-log entry ──────────────────────────────────
 
 function buildSignalProof(signal, currentPrice) {
-  const from = signal.yesPrice || 0;
+  // Guard: when yesPrice is null/unknown, we must not assume 0% as the base
+  const hasKnownPrice = signal.yesPrice !== null && signal.yesPrice !== undefined;
+  const from = hasKnownPrice ? signal.yesPrice : null;
   const to   = currentPrice !== null ? currentPrice : from;
-  const delta = to - from;
-  const absDelta = Math.abs(delta * 100);
 
-  // Flow direction tells us which direction we're bullish on
-  const isBullishYes = signal.flowDirection === 'MINORITY_HEAVY' && from < 0.5;
-  const isBullishNo  = signal.flowDirection === 'MINORITY_HEAVY' && from >= 0.5;
-  const calledDirection = isBullishYes ? 'YES' : isBullishNo ? 'NO' : 'YES';
+  // Determine called direction:
+  // 1. If yesPrice is known: minority-heavy on the lower-prob side
+  // 2. If yesPrice is null: check polarity field or message for Negative/Positive keyword
+  let calledDirection = 'UNKNOWN';
+  if (hasKnownPrice) {
+    const isBullishYes = signal.flowDirection === 'MINORITY_HEAVY' && from < 0.5;
+    const isBullishNo  = signal.flowDirection === 'MINORITY_HEAVY' && from >= 0.5;
+    calledDirection = isBullishYes ? 'YES' : isBullishNo ? 'NO' : 'YES';
+  } else if (signal.flowPolarity) {
+    // Explicit polarity: 'positive' → YES, 'negative' → NO
+    calledDirection = signal.flowPolarity === 'negative' ? 'NO' : 'YES';
+  } else if (signal.calledDirection) {
+    calledDirection = signal.calledDirection;
+  }
+  // When direction is unknown, remain OPEN
+  const directionKnown = calledDirection !== 'UNKNOWN';
+
+  const delta    = (from !== null && to !== null) ? to - from : null;
+  const absDelta = delta !== null ? Math.abs(delta * 100) : 0;
 
   // Are we winning?
-  const movingOurWay = (calledDirection === 'YES' && delta > 0) ||
-                       (calledDirection === 'NO' && delta < 0);
+  const movingOurWay = directionKnown && delta !== null &&
+    ((calledDirection === 'YES' && delta > 0) || (calledDirection === 'NO' && delta < 0));
 
-  const impliedPnL = calledDirection === 'YES'
-    ? ((to - from) / from * 100).toFixed(1)
-    : ((from - to) / (1 - from) * 100).toFixed(1);
-  const pnlStr = `${parseFloat(impliedPnL) >= 0 ? '+' : ''}${impliedPnL}%`;
+  let pnlStr = 'N/A';
+  if (directionKnown && from !== null && to !== null) {
+    const impliedPnL = calledDirection === 'YES'
+      ? ((to - from) / Math.max(from, 0.001) * 100).toFixed(1)
+      : ((from - to) / Math.max(1 - from, 0.001) * 100).toFixed(1);
+    pnlStr = `${parseFloat(impliedPnL) >= 0 ? '+' : ''}${impliedPnL}%`;
+  }
 
-  const status = absDelta >= 10 ? (movingOurWay ? 'WINNING' : 'LOSING') : 'OPEN';
+  const status = !directionKnown ? 'OPEN'
+    : (absDelta >= 10 ? (movingOurWay ? 'WINNING' : 'LOSING') : 'OPEN');
+
+  const deltaStr = (from !== null && to !== null) ? fmtDelta(from, to) : 'N/A';
+  const deltaNum = deltaStr !== 'N/A' ? parseFloat(deltaStr.replace('+','').replace('pp','')) : null;
+  const fromPct  = from !== null ? fmtPct(from) : 'unknown';
+  const toPct    = to   !== null ? fmtPct(to)   : 'unknown';
 
   return {
     id: `signal-${signal.slug}-${signal.timestamp?.replace(/[:.]/g,'')}`,
@@ -209,24 +233,24 @@ function buildSignalProof(signal, currentPrice) {
     signal_timestamp_est: signal.timestamp ? formatDateEST(signal.timestamp) : null,
     signal_yes_price: from,
     current_yes_price: to,
-    delta_from_signal: parseFloat(fmtDelta(from, to).replace('+','').replace('pp','')),
-    delta_from_signal_str: fmtDelta(from, to),
+    delta_from_signal: deltaNum,
+    delta_from_signal_str: deltaStr,
     called_direction: calledDirection,
     implied_pnl: pnlStr,
     signal_score: signal.score || signal.threat_score,
     flow_direction: signal.flowDirection,
     status,
-    notable: absDelta >= MIN_PP_MOVE,
+    notable: (to !== null && absDelta >= MIN_PP_MOVE) || !hasKnownPrice,
     updated_at: new Date().toISOString(),
     proof_text: buildProofText({
       market: signal.question,
       source: 'Prescience signal bot',
       flaggedAt: signal.timestamp ? formatDateEST(signal.timestamp) : 'unknown',
-      originalPct: fmtPct(from),
-      currentPct: fmtPct(to),
+      originalPct: fromPct,
+      currentPct: toPct,
       peakPct: null,
-      delta: fmtDelta(from, to),
-      note: `Score ${signal.score || signal.threat_score}/12, ${signal.flowDirection} flow. Called ${calledDirection}.`,
+      delta: deltaStr,
+      note: `Score ${signal.score || signal.threat_score}/12, ${signal.flowDirection} flow. Direction: ${calledDirection}.`,
     }),
   };
 }

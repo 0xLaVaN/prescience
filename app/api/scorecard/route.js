@@ -2,10 +2,11 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 
-const SCORECARD_PATH = '/data/workspace-shared/signals/scorecard-data.json';
-const RECEIPTS_PATH = '/data/workspace-shared/signals/resolution-receipts.json';
-const POST_LOG_PATH = '/data/workspace-shared/signals/telegram-post-log.json';
-const STATIC_PATH = path.join(process.cwd(), 'public', 'data', 'scorecard.json');
+const SCORECARD_PATH  = '/data/workspace-shared/signals/scorecard-data.json';
+const RECEIPTS_PATH   = '/data/workspace-shared/signals/resolution-receipts.json';
+const POST_LOG_PATH   = '/data/workspace-shared/signals/telegram-post-log.json';
+const LIVE_PROOFS_PATH = '/data/workspace-shared/signals/live-proofs.json';
+const STATIC_PATH     = path.join(process.cwd(), 'public', 'data', 'scorecard.json');
 
 function loadJson(p) {
   try { return JSON.parse(fs.readFileSync(p, 'utf-8')); } catch { return []; }
