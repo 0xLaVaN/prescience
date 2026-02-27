@@ -1,12 +1,16 @@
 /**
  * PRESCIENCE — Kalshi data fetching via direct REST API
- * Strategy: fetch events (filtered non-sports), then fetch their markets.
+ * Strategy: fetch events (filtered non-sports), then fetch their markets in BATCHES.
+ * Root-cause fix 2026-02-27: Promise.all over 500+ events caused 429 rate limits.
+ * Now batches at BATCH_SIZE=25 with BATCH_DELAY_MS=120ms between batches.
  * Background caching, never blocks scan responses.
  */
 
 const KALSHI_API = 'https://api.elections.kalshi.com/trade-api/v2';
 const MARKET_CACHE_TTL = 15 * 60 * 1000;
 const CACHE_TTL = 5 * 60 * 1000;
+const BATCH_SIZE = 25;      // max concurrent market requests per batch
+const BATCH_DELAY_MS = 120; // ms between batches (avoids 429s)
 const cache = new Map();
 let lastRefreshAttempt = 0;
 
@@ -23,12 +27,26 @@ function cached(key, ttl, fn) {
   });
 }
 
+/** Batch-fetch: process array in chunks of BATCH_SIZE with delay between batches */
+async function batchFetch(items, fetchFn, batchSize = BATCH_SIZE, delayMs = BATCH_DELAY_MS) {
+  const results = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const batchResults = await Promise.all(batch.map(fetchFn));
+    results.push(...batchResults);
+    if (i + batchSize < items.length && delayMs > 0) {
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  return results;
+}
+
 /**
- * Fetch non-sports Kalshi events, then their markets.
+ * Fetch non-sports Kalshi events, then their markets (batched to avoid rate limits).
  */
 export async function getKalshiActiveMarkets(maxMarkets = 300) {
   return cached(`kalshi_active_${maxMarkets}`, MARKET_CACHE_TTL, async () => {
-    // Step 1: Get all open events (fast, <1s)
+    // Step 1: Get all open events — add 150ms delay between pages to avoid 429
     let allEvents = [];
     let cursor = null;
     for (let page = 0; page < 20; page++) {
@@ -36,12 +54,17 @@ export async function getKalshiActiveMarkets(maxMarkets = 300) {
         let url = `${KALSHI_API}/events?status=open&limit=200`;
         if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
         const res = await fetch(url);
-        if (!res.ok) break;
+        if (!res.ok) {
+          console.error(`Kalshi events page ${page} failed: ${res.status}`);
+          break;
+        }
         const data = await res.json();
         if (!data.events?.length) break;
         allEvents.push(...data.events);
         cursor = data.cursor;
         if (!cursor || data.events.length < 200) break;
+        // Delay between event pages to avoid rate limits
+        await new Promise(r => setTimeout(r, 150));
       } catch (err) {
         console.error('Kalshi events fetch failed:', err.message);
         break;
@@ -61,19 +84,21 @@ export async function getKalshiActiveMarkets(maxMarkets = 300) {
     const nonSportsEvents = allEvents.filter(e => !SPORTS_CATEGORIES.includes(e.category));
     console.log(`Kalshi: ${nonSportsEvents.length} non-sports events (filtered ${allEvents.length - nonSportsEvents.length} sports)`);
 
-    // Step 2: Fetch markets for ALL non-sports events concurrently (one big Promise.all)
-    const allMarkets = [];
+    // Step 2: Fetch markets for non-sports events in BATCHES (not all at once!)
+    // Previously: Promise.all over 500+ events → 429 rate limits → ~9 markets returned
+    // Now: batches of 25 with 120ms delays → stable ~50+ market coverage
     const eventTickers = nonSportsEvents.map(e => e.event_ticker);
 
-    // Fire all requests at once — each is tiny, Kalshi can handle it
-    const results = await Promise.all(
-      eventTickers.map(ticker =>
+    const results = await batchFetch(
+      eventTickers,
+      ticker =>
         fetch(`${KALSHI_API}/markets?event_ticker=${encodeURIComponent(ticker)}&status=open&limit=50`)
           .then(r => r.ok ? r.json() : { markets: [] })
           .then(d => d.markets || [])
           .catch(() => [])
-      )
     );
+
+    const allMarkets = [];
     let tickerFiltered = 0;
     for (const markets of results) {
       for (const m of markets) {
@@ -84,7 +109,7 @@ export async function getKalshiActiveMarkets(maxMarkets = 300) {
         allMarkets.push(mapKalshiMarket(m));
       }
     }
-    console.log(`Kalshi: ${allMarkets.length} markets after ticker filter (${tickerFiltered} sports tickers removed)`);
+    console.log(`Kalshi: ${allMarkets.length} markets after ticker filter (${tickerFiltered} sports tickers removed). Batches: ${Math.ceil(eventTickers.length / BATCH_SIZE)}`);
 
     // Sort by volume
     allMarkets.sort((a, b) => (parseFloat(b.volume24hr) || 0) - (parseFloat(a.volume24hr) || 0));
