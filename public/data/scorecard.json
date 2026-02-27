@@ -1,14 +1,53 @@
 {
   "stats": {
-    "total_calls": 10,
-    "resolved": 0,
-    "open": 10,
+    "total_calls": 12,
+    "resolved": 1,
+    "open": 11,
     "wins": 0,
-    "losses": 0,
-    "win_rate": null,
-    "cumulative_pnl": null
+    "losses": 1,
+    "win_rate": "0.0",
+    "cumulative_pnl": "147.2%"
   },
   "calls": [
+    {
+      "slug": "khamenei-out-as-supreme-leader-of-iran-by-march-31",
+      "question": "Khamenei out as Supreme Leader of Iran by March 31?",
+      "signal_score": 8,
+      "entry_price": 0.175,
+      "current_price": 0.175,
+      "price_delta": "-3.0pp",
+      "live_status": "OPEN",
+      "implied_pnl": "-14.6%",
+      "flow_direction": "MINORITY_HEAVY",
+      "called_at": "2026-02-27T00:04:56.952Z",
+      "status": "open"
+    },
+    {
+      "slug": "us-strikes-iran-by-march-31-2026-393-881-954",
+      "question": "US strikes Iran by March 31, 2026?",
+      "signal_score": 9,
+      "entry_price": 0.545,
+      "current_price": null,
+      "price_delta": null,
+      "live_status": "OPEN",
+      "implied_pnl": null,
+      "flow_direction": "MINORITY_HEAVY",
+      "called_at": "2026-02-27T00:04:56.952Z",
+      "status": "open"
+    },
+    {
+      "slug": "us-strikes-iran-by-march-15-2026-176-537-334-314-311-563-139-841-296-929-674-361-128-125-587-277-713-864-314-272-772-416-338-683-554-682-743-939-378-887-219-419-692-473-532-837-119-848-847-469",
+      "question": "US strikes Iran by March 15, 2026?",
+      "signal_score": 8,
+      "entry_price": 0.395,
+      "current_price": null,
+      "price_delta": null,
+      "live_status": "OPEN",
+      "implied_pnl": null,
+      "flow_direction": "MINORITY_HEAVY",
+      "called_at": "2026-02-27T00:04:56.952Z",
+      "status": "open"
+    },
     {
       "slug": "ethereum-etf-flows-on-february-26",
       "question": "Ethereum ETF Flows on February 26?",
@@ -27,13 +66,11 @@
       "question": "Will Axiom be accused of insider trading?",
       "signal_score": 6,
       "entry_price": 0.4045,
-      "current_price": null,
-      "price_delta": null,
-      "live_status": "OPEN",
-      "implied_pnl": null,
-      "flow_direction": "MINORITY_HEAVY",
+      "outcome": "YES",
+      "pnl": "+147.2%",
       "called_at": "2026-02-26T06:05:00.659Z",
-      "status": "open"
+      "resolved_at": "2026-02-26T18:27:24.01233Z",
+      "status": "resolved"
     },
     {
       "slug": "us-strikes-iran-by-march-31-2026-393-221-132-633-215-592-866-184-321-377-931-222-297-655-719-935-944-321-534-925-937-744-476-586-454-914-676-972-362-876-771-213-554-443-439-287-519-563-393-256-817-961-941-762-654-519-837-721-654-479-949-423-962-271-545",
@@ -85,19 +122,6 @@
       "implied_pnl": "-89.9%",
       "flow_direction": "MINORITY_HEAVY",
       "called_at": "2026-02-24T15:09:22.350Z",
-      "status": "open"
-    },
-    {
-      "slug": "khamenei-out-as-supreme-leader-of-iran-by-march-31",
-      "question": "Khamenei out as Supreme Leader of Iran by March 31?",
-      "signal_score": 8,
-      "entry_price": 0.205,
-      "current_price": 0.175,
-      "price_delta": "-3.0pp",
-      "live_status": "OPEN",
-      "implied_pnl": "-14.6%",
-      "flow_direction": "MINORITY_HEAVY",
-      "called_at": "2026-02-24T00:06:29.493Z",
       "status": "open"
     },
     {
@@ -157,5 +181,5 @@
       "next_trigger": "ZachXBT report release. Still pending as of 23:32 UTC."
     }
   ],
-  "updated_at": "2026-02-26T18:21:03.491Z"
+  "updated_at": "2026-02-27T00:15:03.648Z"
 }
